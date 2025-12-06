@@ -26,6 +26,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   
   // States
   const [isModelLoaded, setIsModelLoaded] = useState(false);
+  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [cameraAllowed, setCameraAllowed] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Default to enabled
@@ -111,30 +112,42 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   };
 
   // Initialize MediaPipe HandLandmarker
+  const initMediaPipe = async () => {
+    setModelLoadError(null);
+    try {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+      );
+      const landmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numHands: 1,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      setHandLandmarker(landmarker);
+      setIsModelLoaded(true);
+    } catch (error) {
+      console.error("Error loading MediaPipe:", error);
+      setModelLoadError("Failed to load hand tracking. Check your internet connection.");
+    }
+  };
+
   useEffect(() => {
-    const initMediaPipe = async () => {
-      try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-        );
-        const landmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-            delegate: "GPU"
-          },
-          runningMode: "VIDEO",
-          numHands: 1,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-        setHandLandmarker(landmarker);
-        setIsModelLoaded(true);
-      } catch (error) {
-        console.error("Error loading MediaPipe:", error);
+    // Add a timeout to detect if model loading is taking too long
+    const timeoutId = setTimeout(() => {
+      if (!isModelLoaded && !modelLoadError) {
+        setModelLoadError("Model loading timed out. Click retry or check your connection.");
       }
-    };
+    }, 15000); // 15 second timeout
+
     initMediaPipe();
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const clearInternalCanvas = () => {
@@ -582,9 +595,28 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       {(!isCameraActive || !isModelLoaded) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#f0f0f0] z-20 text-gray-700">
           {!isModelLoaded ? (
-             <div className="flex flex-col items-center p-6 border border-gray-300 bg-white shadow-sm">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
-                <p className="text-sm">Loading components...</p>
+             <div className="flex flex-col items-center p-6 border border-gray-300 bg-white shadow-sm max-w-sm">
+                {modelLoadError ? (
+                  <>
+                    <div className="text-red-500 text-4xl mb-4">⚠️</div>
+                    <p className="text-sm text-red-600 text-center mb-4">{modelLoadError}</p>
+                    <button 
+                      onClick={() => {
+                        setModelLoadError(null);
+                        initMediaPipe();
+                      }}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                    >
+                      Retry Loading
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+                    <p className="text-sm">Loading hand tracking model...</p>
+                    <p className="text-xs text-gray-400 mt-2">This may take a moment on first load</p>
+                  </>
+                )}
              </div>
           ) : (
              <div className="text-center space-y-4 p-8 border border-gray-300 bg-white shadow-sm max-w-sm">
