@@ -1,0 +1,8 @@
+{
+  "name": "SketchAir",
+  "description": "A magical way to draw in the air using your webcam and turn gestures into AI art.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
