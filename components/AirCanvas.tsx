@@ -1,7 +1,8 @@
+
 import React, { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { HandPoint } from '../types';
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/+esm";
-import { Video, Play, Power, Trash2, Mic, Sparkles, Save } from 'lucide-react';
+import { Video, Play, Power, Trash2, Mic, Sparkles, Save, ThumbsUp } from 'lucide-react';
 
 interface AirCanvasProps {
   onCanvasUpdate: (dataUrl: string) => void;
@@ -26,17 +27,17 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   
   // States
   const [isModelLoaded, setIsModelLoaded] = useState(false);
-  const [modelLoadError, setModelLoadError] = useState<string | null>(null);
   const [cameraAllowed, setCameraAllowed] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Default to enabled
   const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
-  const [gestureState, setGestureState] = useState<'drawing' | 'hover' | 'clearing' | 'voice' | 'generating' | 'saving' | 'none'>('none');
+  const [gestureState, setGestureState] = useState<'drawing' | 'hover' | 'clearing' | 'voice' | 'generating' | 'saving' | 'thumbsUp' | 'none'>('none');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [isWarmup, setIsWarmup] = useState(true); // Warmup state to prevent instant triggers
   
   // Tracking Refs
   const lastPointRef = useRef<HandPoint | null>(null);
-  const smoothedPointRef = useRef<HandPoint | null>(null); // NEW: For stabilization
+  const smoothedPointRef = useRef<HandPoint | null>(null); // For stabilization
   const isDrawingActiveRef = useRef(false); // Latch state for drawing
   const requestRef = useRef<number>(0);
   
@@ -48,6 +49,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   const oneFingerConsistencyRef = useRef<number>(0);
   const peaceSignConsistencyRef = useRef<number>(0);
   const threeFingerConsistencyRef = useRef<number>(0);
+  const thumbsUpConsistencyRef = useRef<number>(0);
   const lastTriggerTimeRef = useRef<number>(0); // Global cooldown for triggers
 
   // Swipe Detection Refs
@@ -112,42 +114,30 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   };
 
   // Initialize MediaPipe HandLandmarker
-  const initMediaPipe = async () => {
-    setModelLoadError(null);
-    try {
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-      );
-      const landmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-          delegate: "GPU"
-        },
-        runningMode: "VIDEO",
-        numHands: 1,
-        minHandDetectionConfidence: 0.5,
-        minHandPresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5
-      });
-      setHandLandmarker(landmarker);
-      setIsModelLoaded(true);
-    } catch (error) {
-      console.error("Error loading MediaPipe:", error);
-      setModelLoadError("Failed to load hand tracking. Check your internet connection.");
-    }
-  };
-
   useEffect(() => {
-    // Add a timeout to detect if model loading is taking too long
-    const timeoutId = setTimeout(() => {
-      if (!isModelLoaded && !modelLoadError) {
-        setModelLoadError("Model loading timed out. Click retry or check your connection.");
+    const initMediaPipe = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+        );
+        const landmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          minHandPresenceConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+        setHandLandmarker(landmarker);
+        setIsModelLoaded(true);
+      } catch (error) {
+        console.error("Error loading MediaPipe:", error);
       }
-    }, 15000); // 15 second timeout
-
+    };
     initMediaPipe();
-
-    return () => clearTimeout(timeoutId);
   }, []);
 
   const clearInternalCanvas = () => {
@@ -180,6 +170,9 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
             videoRef.current.onloadeddata = () => {
               setCameraAllowed(true);
               setIsDrawingEnabled(true);
+              // Start Warmup period
+              setIsWarmup(true);
+              setTimeout(() => setIsWarmup(false), 2000); // 2 second warmup
             };
           }
         } catch (err) {
@@ -196,6 +189,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
         smoothedPointRef.current = null;
         pinchConsistencyRef.current = 0;
         historyRef.current = []; // Clear history on stop
+        setIsWarmup(true);
         
         // Auto-clear canvas on stop
         clearInternalCanvas();
@@ -217,10 +211,34 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
     };
   }, [isCameraActive, isModelLoaded]);
 
+  // Helper function to composite solid white background with sketch for export
+  const getCompositeDataUrl = (canvas: HTMLCanvasElement): string => {
+     const tempCanvas = document.createElement('canvas');
+     tempCanvas.width = canvas.width;
+     tempCanvas.height = canvas.height;
+     const tempCtx = tempCanvas.getContext('2d');
+     if (!tempCtx) return '';
+
+     // 1. Fill White Background
+     tempCtx.fillStyle = '#FFFFFF';
+     tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+     
+     // 2. Draw the sketch (which has transparent background) on top
+     tempCtx.drawImage(canvas, 0, 0);
+     
+     // Export as JPEG to ensure no transparency
+     return tempCanvas.toDataURL('image/jpeg', 0.95);
+  };
+
+
   const drawLine = (p1: HandPoint, p2: HandPoint, ctx: CanvasRenderingContext2D) => {
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
+    
+    // Use quadratic curve for smoother joints if we had more history, 
+    // but with high-fps dense points, standard lineTo with dynamic smoothing is sufficient.
     ctx.lineTo(p2.x, p2.y);
+    
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = strokeWidth;
     ctx.lineCap = "round";
@@ -290,25 +308,33 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       
       const indexTip = landmarks[8];
       const thumbTip = landmarks[4];
+      const thumbIP = landmarks[3];
       const wrist = landmarks[0];
 
       // Calculate Pinch Distance
       const pinchDistance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
       
-      // --- CURSOR STABILIZATION LOGIC ---
+      // --- DYNAMIC STABILIZATION LOGIC ---
       const rawX = indexTip.x * drawingCanvas.width;
       const rawY = indexTip.y * drawingCanvas.height;
-
-      // Smoothing Factor (0.1 = Very smooth/slow, 0.9 = Raw/jittery)
-      // 0.25 is a good balance for drawing
-      const SMOOTHING_FACTOR = 0.25;
 
       if (!smoothedPointRef.current) {
           smoothedPointRef.current = { x: rawX, y: rawY };
       } else {
+          const dx = rawX - smoothedPointRef.current.x;
+          const dy = rawY - smoothedPointRef.current.y;
+          const dist = Math.hypot(dx, dy);
+
+          // Enhanced Stabilization
+          // Slow movement (< 10px): Heavy smoothing (0.05) to kill jitter
+          // Fast movement (> 100px): Light smoothing (0.5) for responsiveness
+          const baseFactor = 0.05; 
+          const speedFactor = Math.min(dist / 200, 0.45); 
+          const smoothingFactor = baseFactor + speedFactor;
+
           smoothedPointRef.current = {
-              x: lerp(smoothedPointRef.current.x, rawX, SMOOTHING_FACTOR),
-              y: lerp(smoothedPointRef.current.y, rawY, SMOOTHING_FACTOR)
+              x: lerp(smoothedPointRef.current.x, rawX, smoothingFactor),
+              y: lerp(smoothedPointRef.current.y, rawY, smoothingFactor)
           };
       }
 
@@ -320,10 +346,10 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
 
       // Cooldown check for special triggers
       const TRIGGER_COOLDOWN = 3000; // 3 seconds between voice/gen/save triggers
-      const canTrigger = Date.now() - lastTriggerTimeRef.current > TRIGGER_COOLDOWN;
+      const canTrigger = !isWarmup && (Date.now() - lastTriggerTimeRef.current > TRIGGER_COOLDOWN);
 
       // --- PINCH (DRAWING) LOGIC ---
-      const canDraw = !isResultVisible && isDrawingEnabled; 
+      const canDraw = !isResultVisible && isDrawingEnabled && !isWarmup; 
 
       const START_THRESHOLD = 0.04; 
       const STOP_THRESHOLD = 0.08; 
@@ -346,7 +372,6 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           pinchConsistencyRef.current = 0;
           if (pinchDistance > STOP_THRESHOLD) {
              isDrawingActiveRef.current = false;
-             // Don't nullify lastPoint immediately here to avoid glitches, handled below
           }
       }
 
@@ -374,7 +399,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       }
       // ----------------------------
 
-      // --- GESTURE LOGIC: 1 Finger (Voice), 2 Fingers (Gen), 3 Fingers (Save) ---
+      // --- GESTURE LOGIC: 1 Finger (Voice), 2 Fingers (Gen), 3 Fingers (Save), Thumbs Up (Stop) ---
       const isExtended = (tipIdx: number, pipIdx: number) => {
           return landmarks[tipIdx].y < landmarks[pipIdx].y;
       }
@@ -384,17 +409,23 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       const ringExtended = isExtended(16, 14);
       const pinkyExtended = isExtended(20, 18);
       
-      const ONE_FINGER_POSE = indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
+      // CRITICAL FIX: Ensure thumb is FAR from index for One Finger Pose to avoid false triggers while drawing
+      const thumbIsNotPinching = pinchDistance > 0.15; 
+      // Thumbs Up: Thumb tip above IP, others curled
+      const thumbIsUp = thumbTip.y < thumbIP.y;
+
+      const ONE_FINGER_POSE = indexExtended && !middleExtended && !ringExtended && !pinkyExtended && thumbIsNotPinching;
       const PEACE_SIGN_POSE = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
       const THREE_FINGER_POSE = indexExtended && middleExtended && ringExtended && !pinkyExtended;
+      const THUMBS_UP_POSE = thumbIsUp && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended && thumbIsNotPinching;
 
       // Special Trigger Logic (only if not drawing and off cooldown)
-      if (!isDrawingActiveRef.current && canTrigger) {
+      if (canTrigger) {
           
           const HOLD_FRAMES = 30; // Hold for ~1 second (30fps)
 
           // VOICE (1 Finger)
-          if (ONE_FINGER_POSE) {
+          if (ONE_FINGER_POSE && !isDrawingActiveRef.current) {
               oneFingerConsistencyRef.current++;
               if (oneFingerConsistencyRef.current > HOLD_FRAMES) {
                   onVoiceTrigger();
@@ -408,7 +439,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           }
 
           // GENERATE (2 Fingers)
-          if (PEACE_SIGN_POSE) {
+          if (PEACE_SIGN_POSE && !isDrawingActiveRef.current) {
               peaceSignConsistencyRef.current++;
               if (peaceSignConsistencyRef.current > HOLD_FRAMES) {
                   onGenerateTrigger();
@@ -422,7 +453,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           }
 
           // SAVE (3 Fingers)
-          if (THREE_FINGER_POSE) {
+          if (THREE_FINGER_POSE && !isDrawingActiveRef.current) {
               threeFingerConsistencyRef.current++;
               if (threeFingerConsistencyRef.current > HOLD_FRAMES) {
                   onSaveTrigger();
@@ -433,6 +464,22 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
               }
           } else {
               threeFingerConsistencyRef.current = 0;
+          }
+
+          // STOP DRAWING (Thumbs Up)
+          if (THUMBS_UP_POSE) {
+              thumbsUpConsistencyRef.current++;
+              // Faster trigger for stop (less hold time needed)
+              if (thumbsUpConsistencyRef.current > 5) {
+                  if (isDrawingActiveRef.current) {
+                      isDrawingActiveRef.current = false;
+                      setFeedbackMessage("👍 Thumbs Up: Stopped");
+                      setTimeout(() => setFeedbackMessage(null), 1000);
+                  }
+                  thumbsUpConsistencyRef.current = 0;
+              }
+          } else {
+              thumbsUpConsistencyRef.current = 0;
           }
       }
       // ---------------------------------------------------------
@@ -453,6 +500,8 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           setGestureState('generating');
       } else if (oneFingerConsistencyRef.current > 10) {
           setGestureState('voice');
+      } else if (thumbsUpConsistencyRef.current > 3 || (THUMBS_UP_POSE && !isDrawing)) {
+          setGestureState('thumbsUp');
       } else {
           setGestureState(isDrawing ? 'drawing' : 'hover');
       }
@@ -468,7 +517,9 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       } else {
         // Just stopped drawing
         if (lastPointRef.current) {
-           onCanvasUpdate(drawingCanvas.toDataURL("image/png"));
+           // Use Composite Helper to save white-background version for AI, but keep transparent for UI
+           const compositeUrl = getCompositeDataUrl(drawingCanvas);
+           onCanvasUpdate(compositeUrl);
            lastPointRef.current = null;
         }
       }
@@ -511,15 +562,16 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       if (threeFingerConsistencyRef.current > 5) {
           drawLoadingRing(x, y, threeFingerConsistencyRef.current / 30, '#10B981'); 
       }
+      if (thumbsUpConsistencyRef.current > 2) {
+          drawLoadingRing(x, y, thumbsUpConsistencyRef.current / 5, '#2563EB'); // Blue
+      }
 
       // Helper line to show pinch proximity
-      if (!isDrawing && canDraw && pinchDistance < STOP_THRESHOLD * 2 && oneFingerConsistencyRef.current < 5 && peaceSignConsistencyRef.current < 5 && threeFingerConsistencyRef.current < 5) {
+      if (!isDrawing && canDraw && pinchDistance < STOP_THRESHOLD * 2 && oneFingerConsistencyRef.current < 5 && peaceSignConsistencyRef.current < 5 && threeFingerConsistencyRef.current < 5 && thumbsUpConsistencyRef.current < 2) {
           const tx = thumbTip.x * drawingCanvas.width;
           const ty = thumbTip.y * drawingCanvas.height;
           
           overlayCtx.beginPath();
-          // We use the Smoothed position for the source, but thumb is raw (less critical)
-          // Ideally smooth thumb too, but for UI line it's okay.
           overlayCtx.moveTo(x, y);
           overlayCtx.lineTo(tx, ty);
           
@@ -543,10 +595,11 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
         oneFingerConsistencyRef.current = 0;
         peaceSignConsistencyRef.current = 0;
         threeFingerConsistencyRef.current = 0;
+        thumbsUpConsistencyRef.current = 0;
     }
 
     requestRef.current = requestAnimationFrame(animate);
-  }, [cameraAllowed, handLandmarker, strokeColor, strokeWidth, onCanvasUpdate, isDrawingEnabled, onVoiceTrigger, onGenerateTrigger, onSaveTrigger, isResultVisible]);
+  }, [cameraAllowed, handLandmarker, strokeColor, strokeWidth, onCanvasUpdate, isDrawingEnabled, onVoiceTrigger, onGenerateTrigger, onSaveTrigger, isResultVisible, isWarmup]);
 
   useEffect(() => {
     if (cameraAllowed) {
@@ -587,6 +640,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
             {feedbackMessage.includes('Listening') && <Mic className="w-8 h-8 text-red-400" />}
             {feedbackMessage.includes('Transforming') && <Sparkles className="w-8 h-8 text-purple-400" />}
             {feedbackMessage.includes('Saving') && <Save className="w-8 h-8 text-emerald-400" />}
+            {feedbackMessage.includes('Stopped') && <ThumbsUp className="w-8 h-8 text-blue-400" />}
             {feedbackMessage}
         </div>
       )}
@@ -595,28 +649,9 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       {(!isCameraActive || !isModelLoaded) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#f0f0f0] z-20 text-gray-700">
           {!isModelLoaded ? (
-             <div className="flex flex-col items-center p-6 border border-gray-300 bg-white shadow-sm max-w-sm">
-                {modelLoadError ? (
-                  <>
-                    <div className="text-red-500 text-4xl mb-4">⚠️</div>
-                    <p className="text-sm text-red-600 text-center mb-4">{modelLoadError}</p>
-                    <button 
-                      onClick={() => {
-                        setModelLoadError(null);
-                        initMediaPipe();
-                      }}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                    >
-                      Retry Loading
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
-                    <p className="text-sm">Loading hand tracking model...</p>
-                    <p className="text-xs text-gray-400 mt-2">This may take a moment on first load</p>
-                  </>
-                )}
+             <div className="flex flex-col items-center p-6 border border-gray-300 bg-white shadow-sm">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-4"></div>
+                <p className="text-sm">Loading components...</p>
              </div>
           ) : (
              <div className="text-center space-y-4 p-8 border border-gray-300 bg-white shadow-sm max-w-sm">
@@ -647,6 +682,9 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
                  <p className="font-bold mb-1 border-b border-gray-300 pb-1">Gestures</p>
                  <div className={`flex items-center gap-2 mb-1 ${gestureState === 'drawing' ? 'text-green-700 font-bold' : 'text-gray-500'}`}>
                     <span>👌 Pinch (Hold): Draw</span>
+                 </div>
+                 <div className={`flex items-center gap-2 mb-1 ${gestureState === 'thumbsUp' ? 'text-blue-600 font-bold' : 'text-gray-500'}`}>
+                    <span>👍 Thumbs Up: Stop</span>
                  </div>
                  <div className={`flex items-center gap-2 mb-1 ${gestureState === 'voice' ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
                     <span>☝️ 1 Finger: Voice</span>

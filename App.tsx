@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Sparkles, Download, RefreshCw, Eraser, Image as ImageIcon, Save, Undo, Redo, MousePointer2, Palette, X, Trash2 } from 'lucide-react';
 import AirCanvas, { AirCanvasHandle } from './components/AirCanvas';
@@ -22,6 +23,8 @@ function App() {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [prompt, setPrompt] = useState("");
+  // New state to store the prompt used for the *current* result, separate from input
+  const [resultPrompt, setResultPrompt] = useState(""); 
   const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ArtStyle.ILLUSTRATION);
   const [error, setError] = useState<string | null>(null);
   
@@ -53,13 +56,17 @@ function App() {
     setGeneratedImage(null); 
 
     try {
+      // Save the current prompt to resultPrompt before clearing
+      setResultPrompt(prompt);
+      
       const result = await generateImageFromSketch(canvasDataUrl, prompt, selectedStyle);
       setGeneratedImage(result);
       
-      // Auto-clear sketch on success for a fresh start
-      if (airCanvasRef.current) {
-        airCanvasRef.current.clearCanvas();
-      }
+      // Clear the input prompt so user can start fresh immediately
+      setPrompt("");
+
+      // We do NOT clear the sketch automatically anymore, allowing style switching.
+      // But we can inform the user via toast/console if needed.
 
     } catch (err: any) {
       setError(err.message || "Failed to generate image.");
@@ -71,7 +78,7 @@ function App() {
   const handleDownload = (imageUrl: string) => {
       const link = document.createElement('a');
       link.href = imageUrl;
-      link.download = `sketchair-${Date.now()}.png`;
+      link.download = `sketch-air-${Date.now()}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -108,7 +115,8 @@ function App() {
           const newItem: GalleryItem = {
               id: Date.now().toString(),
               url: generatedImage,
-              prompt: prompt || 'Untitled',
+              // Use resultPrompt (the one used for generation) instead of current input prompt
+              prompt: resultPrompt || '', 
               style: selectedStyle,
               timestamp: Date.now()
           };
@@ -117,10 +125,39 @@ function App() {
           setError(null); 
           // Note: AirCanvas will show "Saving..." toast automatically
       }
-  }, [generatedImage, prompt, selectedStyle]);
+  }, [generatedImage, resultPrompt, selectedStyle]);
+
+  // Memoize transcript handler to keep VoiceInput stable
+  const handleTranscript = useCallback((text: string) => {
+    setPrompt((prev) => prev ? `${prev} ${text}` : text);
+  }, []);
 
   const deleteFromGallery = (id: string) => {
       setGallery(prev => prev.filter(item => item.id !== id));
+  };
+  
+  // Quick Style Switch Handler (Re-generate with same sketch)
+  const handleStyleSwitch = (style: ArtStyle) => {
+      setSelectedStyle(style);
+      // We need to wait for state to update, but handleGenerate uses current state.
+      // A cleaner way is to pass args to generate, but for now we set state and rely on effect or user click.
+      // To make it instant, we can call the service directly with the new style:
+      
+      setIsGenerating(true);
+      setError(null);
+      // Don't clear result yet, let it update in place
+      
+      // Use the existing canvas data and the EXISTING result prompt
+      generateImageFromSketch(canvasDataUrl, resultPrompt, style)
+        .then(result => {
+             setGeneratedImage(result);
+        })
+        .catch(err => {
+             setError(err.message || "Failed to transform.");
+        })
+        .finally(() => {
+             setIsGenerating(false);
+        });
   };
 
   return (
@@ -140,7 +177,7 @@ function App() {
             </button>
          </div>
          <div className="flex-1 text-center font-normal text-gray-700">
-            Untitled - SketchAir Paint
+            Untitled - Sketch Air
          </div>
          <button onClick={() => setShowGallery(!showGallery)} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] ${showGallery ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>
              <ImageIcon className="w-3 h-3" />
@@ -178,7 +215,7 @@ function App() {
                     </div>
                     <VoiceInput 
                         ref={voiceInputRef}
-                        onTranscript={(text) => setPrompt((prev) => prev ? `${prev} ${text}` : text)} 
+                        onTranscript={handleTranscript} 
                         isProcessing={isGenerating} 
                     />
                  </div>
@@ -317,18 +354,37 @@ function App() {
             {generatedImage && (
                 <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 flex items-center justify-center p-8">
                     <div className="relative max-w-4xl max-h-full bg-white p-2 rounded-lg shadow-2xl border border-gray-600 flex flex-col">
-                        <img src={generatedImage} alt="Result" className="max-h-[70vh] object-contain border border-gray-200" />
+                        <img src={generatedImage} alt="Result" className="max-h-[60vh] object-contain border border-gray-200" />
                         
                         <div className="mt-2 flex items-center justify-between text-xs text-gray-600 bg-gray-50 p-2 rounded">
                             <div className="flex items-center gap-4">
-                                <span className="font-bold text-black">{selectedStyle}</span>
-                                <span className="italic">"{prompt}"</span>
+                                <span className="italic">"{resultPrompt}"</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <div className="flex items-center gap-1 text-emerald-600 animate-pulse font-bold bg-emerald-50 px-2 py-1 rounded">
                                     <span>🤟 Show 3 Fingers to Save</span>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* Quick Style Switcher (NEW) */}
+                        <div className="mt-2 border-t border-gray-200 pt-2 grid grid-cols-3 gap-2">
+                            {Object.values(ArtStyle).map(style => (
+                                <button
+                                    key={style}
+                                    onClick={() => handleStyleSwitch(style)}
+                                    disabled={isGenerating}
+                                    className={`flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold rounded border transition-colors ${
+                                        isGenerating ? 'opacity-50 cursor-wait' : 'hover:bg-purple-50 hover:border-purple-300'
+                                    } ${selectedStyle === style ? 'bg-purple-100 border-purple-400 text-purple-900' : 'bg-white border-gray-200 text-gray-600'}`}
+                                >
+                                    {isGenerating && selectedStyle === style ? (
+                                         <RefreshCw className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                         <span>{style}</span>
+                                    )}
+                                </button>
+                            ))}
                         </div>
 
                         <button 
@@ -390,7 +446,7 @@ function App() {
               <span className="border-l border-gray-300 pl-4">Size: {strokeWidth}px</span>
           </div>
           <div>
-              Powered by Gemini 2.5
+              Built with ❤️
           </div>
       </div>
 
