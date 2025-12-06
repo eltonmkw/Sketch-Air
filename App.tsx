@@ -1,10 +1,21 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Sparkles, Download, RefreshCw, Eraser, Image as ImageIcon, Save, Undo, Redo, MousePointer2 } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Sparkles, Download, RefreshCw, Eraser, Image as ImageIcon, Save, Undo, Redo, MousePointer2, Palette, X, Trash2 } from 'lucide-react';
 import AirCanvas, { AirCanvasHandle } from './components/AirCanvas';
-import VoiceInput from './components/VoiceInput';
-import { ArtStyle } from './types';
+import VoiceInput, { VoiceInputHandle } from './components/VoiceInput';
+import { ArtStyle, GalleryItem } from './types';
 import { STYLE_ICONS } from './constants';
 import { generateImageFromSketch } from './services/geminiService';
+
+const PRESET_COLORS = [
+    '#000000', // Black
+    '#EF4444', // Red
+    '#F59E0B', // Orange
+    '#10B981', // Emerald
+    '#3B82F6', // Blue
+    '#8B5CF6', // Violet
+    '#EC4899', // Pink
+    '#888888', // Gray
+];
 
 function App() {
   const [canvasDataUrl, setCanvasDataUrl] = useState<string>("");
@@ -13,8 +24,17 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ArtStyle.ILLUSTRATION);
   const [error, setError] = useState<string | null>(null);
+  
+  // Gallery State
+  const [gallery, setGallery] = useState<GalleryItem[]>([]);
+  const [showGallery, setShowGallery] = useState(true);
+
+  // New States for Drawing Tools
+  const [strokeColor, setStrokeColor] = useState('#000000');
+  const [strokeWidth, setStrokeWidth] = useState(4);
 
   const airCanvasRef = useRef<AirCanvasHandle>(null);
+  const voiceInputRef = useRef<VoiceInputHandle>(null);
 
   // Callback to update canvas data from the AirCanvas component
   const handleCanvasUpdate = useCallback((dataUrl: string) => {
@@ -48,15 +68,13 @@ function App() {
     }
   };
 
-  const handleDownload = () => {
-    if (generatedImage) {
+  const handleDownload = (imageUrl: string) => {
       const link = document.createElement('a');
-      link.href = generatedImage;
+      link.href = imageUrl;
       link.download = `sketchair-${Date.now()}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    }
   };
 
   const handleClear = () => {
@@ -66,37 +84,86 @@ function App() {
       }
   };
 
+  const handleUndo = () => {
+      if (airCanvasRef.current) {
+          airCanvasRef.current.undo();
+      }
+  };
+
+  // Triggers from Gestures
+  const handleVoiceTrigger = useCallback(() => {
+      if (voiceInputRef.current) {
+          voiceInputRef.current.toggle();
+      }
+  }, []);
+
+  const handleGenerateTrigger = useCallback(() => {
+      if (!isGenerating && !generatedImage) {
+          handleGenerate();
+      }
+  }, [isGenerating, generatedImage, canvasDataUrl, prompt, selectedStyle]); 
+
+  const handleSaveToGallery = useCallback(() => {
+      if (generatedImage) {
+          const newItem: GalleryItem = {
+              id: Date.now().toString(),
+              url: generatedImage,
+              prompt: prompt || 'Untitled',
+              style: selectedStyle,
+              timestamp: Date.now()
+          };
+          setGallery(prev => [newItem, ...prev]);
+          setGeneratedImage(null); // Close preview after saving
+          setError(null); 
+          // Note: AirCanvas will show "Saving..." toast automatically
+      }
+  }, [generatedImage, prompt, selectedStyle]);
+
+  const deleteFromGallery = (id: string) => {
+      setGallery(prev => prev.filter(item => item.id !== id));
+  };
+
   return (
     <div className="h-screen flex flex-col bg-[#dfe8f5]">
       
-      {/* 1. Title Bar (Quick Access Toolbar style) */}
+      {/* 1. Title Bar */}
       <div className="bg-white border-b border-gray-300 flex items-center px-2 py-1 gap-2 text-xs select-none">
          <div className="flex gap-2 border-r border-gray-300 pr-2">
-            <Save className="w-4 h-4 text-purple-700" />
-            <Undo className="w-4 h-4 text-gray-400" />
-            <Redo className="w-4 h-4 text-gray-400" />
+            <button className="hover:bg-gray-100 p-1 rounded" title="Save Project (Download)">
+                <Save className="w-4 h-4 text-purple-700" />
+            </button>
+            <button onClick={handleUndo} className="hover:bg-gray-100 p-1 rounded" title="Undo">
+                <Undo className="w-4 h-4 text-blue-600" />
+            </button>
+            <button className="hover:bg-gray-100 p-1 rounded disabled:opacity-30" disabled title="Redo">
+                <Redo className="w-4 h-4 text-gray-400" />
+            </button>
          </div>
          <div className="flex-1 text-center font-normal text-gray-700">
             Untitled - SketchAir Paint
          </div>
+         <button onClick={() => setShowGallery(!showGallery)} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] ${showGallery ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>
+             <ImageIcon className="w-3 h-3" />
+             Gallery ({gallery.length})
+         </button>
       </div>
 
       {/* 2. The Ribbon UI */}
       <div className="bg-[#f5f6f7] border-b border-gray-300 px-1 py-1 flex gap-1 h-32 select-none shadow-sm z-20">
          
          {/* Group: Image */}
-         <div className="flex flex-col border-r border-gray-300 px-2 min-w-[80px]">
-            <div className="flex-1 flex flex-col items-center justify-center gap-1 group cursor-pointer" onClick={handleDownload} title="Download Result">
+         <div className="flex flex-col border-r border-gray-300 px-2 min-w-[70px]">
+            <div className="flex-1 flex flex-col items-center justify-center gap-1 group cursor-pointer" onClick={() => generatedImage && handleDownload(generatedImage)} title="Download Result">
                 <div className={`p-2 rounded hover:bg-[#cce8ff] hover:border hover:border-[#99d1ff] ${!generatedImage ? 'opacity-50 grayscale' : ''}`}>
                     <Download className="w-8 h-8 text-blue-600" />
                 </div>
-                <span className="text-[11px] text-gray-600 group-hover:text-black">Save</span>
+                <span className="text-[11px] text-gray-600 group-hover:text-black">Save File</span>
             </div>
-            <div className="text-center text-[11px] text-gray-500 mt-1">Image</div>
+            <div className="text-center text-[11px] text-gray-500 mt-1">File</div>
          </div>
 
          {/* Group: Tools */}
-         <div className="flex flex-col border-r border-gray-300 px-3 min-w-[240px]">
+         <div className="flex flex-col border-r border-gray-300 px-3 min-w-[200px]">
             <div className="flex-1 flex flex-col gap-2 pt-1">
                  {/* Input Area */}
                  <div className="flex items-center gap-2">
@@ -109,19 +176,67 @@ function App() {
                             className="w-full h-8 border border-gray-300 px-2 text-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-300 shadow-inner bg-white"
                         />
                     </div>
-                    <VoiceInput onTranscript={(text) => setPrompt((prev) => prev ? `${prev} ${text}` : text)} isProcessing={isGenerating} />
+                    <VoiceInput 
+                        ref={voiceInputRef}
+                        onTranscript={(text) => setPrompt((prev) => prev ? `${prev} ${text}` : text)} 
+                        isProcessing={isGenerating} 
+                    />
                  </div>
-                 {/* Clear Button */}
-                 <button onClick={handleClear} className="flex items-center gap-2 px-2 py-1 text-xs hover:bg-[#cce8ff] border border-transparent hover:border-[#99d1ff] rounded self-start">
-                    <Eraser className="w-4 h-4 text-red-500" />
-                    <span>Clear Canvas</span>
-                 </button>
+                 
+                 <div className="flex gap-2 items-center">
+                    {/* Clear Button */}
+                    <button onClick={handleClear} className="flex items-center gap-2 px-2 py-1 text-xs hover:bg-[#cce8ff] border border-transparent hover:border-[#99d1ff] rounded">
+                        <Eraser className="w-4 h-4 text-red-500" />
+                        <span>Clear</span>
+                    </button>
+                    {/* Size Slider */}
+                    <div className="flex items-center gap-2 ml-2 border-l border-gray-200 pl-2">
+                         <span className="text-[10px] text-gray-500 font-bold">Size:</span>
+                         <input 
+                            type="range" 
+                            min="1" 
+                            max="20" 
+                            value={strokeWidth} 
+                            onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
+                            className="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                         />
+                         <div className="w-3 h-3 rounded-full bg-black" style={{ width: strokeWidth/1.5, height: strokeWidth/1.5 }}></div>
+                    </div>
+                 </div>
             </div>
             <div className="text-center text-[11px] text-gray-500 mt-1">Tools</div>
          </div>
 
-         {/* Group: Styles (Brushes/Shapes) */}
-         <div className="flex flex-col border-r border-gray-300 px-2 flex-1 max-w-md">
+         {/* Group: Colors */}
+         <div className="flex flex-col border-r border-gray-300 px-2 min-w-[140px]">
+            <div className="flex-1 flex flex-col justify-center gap-1">
+                <div className="grid grid-cols-4 gap-1">
+                    {PRESET_COLORS.map(color => (
+                        <button
+                            key={color}
+                            onClick={() => setStrokeColor(color)}
+                            className={`w-6 h-6 rounded-sm border hover:scale-110 transition-transform ${strokeColor === color ? 'border-2 border-black shadow-sm' : 'border-gray-300'}`}
+                            style={{ backgroundColor: color }}
+                            title={color}
+                        />
+                    ))}
+                </div>
+                <div className="flex items-center gap-2 mt-1 bg-white border border-gray-200 p-1 rounded">
+                     <input 
+                        type="color" 
+                        value={strokeColor} 
+                        onChange={(e) => setStrokeColor(e.target.value)}
+                        className="w-6 h-6 p-0 border-0 cursor-pointer"
+                        title="Custom Color"
+                     />
+                     <span className="text-[10px] text-gray-500">Edit Colors</span>
+                </div>
+            </div>
+            <div className="text-center text-[11px] text-gray-500 mt-1">Colors</div>
+         </div>
+
+         {/* Group: Styles */}
+         <div className="flex flex-col border-r border-gray-300 px-2 flex-1 max-w-sm">
             <div className="flex-1 grid grid-cols-3 gap-1 content-center py-1">
                 {Object.values(ArtStyle).map((style) => {
                     const Icon = STYLE_ICONS[style];
@@ -145,8 +260,8 @@ function App() {
             <div className="text-center text-[11px] text-gray-500 mt-1">Styles</div>
          </div>
 
-         {/* Group: Generate (Magic) */}
-         <div className="flex flex-col px-4 min-w-[120px]">
+         {/* Group: Generate */}
+         <div className="flex flex-col px-4 min-w-[100px]">
              <div className="flex-1 flex items-center justify-center">
                 <button
                     onClick={handleGenerate}
@@ -169,11 +284,11 @@ function App() {
          </div>
       </div>
 
-      {/* 3. Main Workspace Area */}
-      <div className="flex-1 relative overflow-hidden flex items-center justify-center p-8 bg-[#e0e4eb] shadow-[inset_0_2px_4px_rgba(0,0,0,0.1)]">
+      {/* 3. Main Workspace Area (FULL SCREEN with Sidebar) */}
+      <div className="flex-1 flex overflow-hidden bg-[#e0e4eb]">
          
-         {/* The "Paper" Container */}
-         <div className="relative bg-white shadow-xl border border-gray-400 w-full max-w-4xl aspect-video">
+         {/* Canvas Area */}
+         <div className="relative flex-1 bg-black">
             
             {/* Error Message Bar */}
             {error && (
@@ -182,44 +297,100 @@ function App() {
                 </div>
             )}
 
-            {/* Generated Image Overlay (Result) */}
-            {generatedImage ? (
-                <div className="absolute inset-0 z-30 bg-white animate-in fade-in duration-300">
-                    <img src={generatedImage} alt="Result" className="w-full h-full object-contain" />
-                    <button 
-                        onClick={() => setGeneratedImage(null)}
-                        className="absolute top-2 right-2 bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 border border-gray-300 rounded px-2 py-1 text-xs shadow-sm"
-                    >
-                        Close Preview (X)
-                    </button>
-                    <div className="absolute bottom-2 left-2 text-xs text-gray-400 bg-white/80 px-2 py-1 rounded">
-                        Result: {selectedStyle}
+            {/* Air Canvas: Always rendered, but ink layer hidden if result is showing.
+                Prop isResultVisible keeps tracking active but disables drawing. */}
+            <div className="w-full h-full">
+                <AirCanvas 
+                  ref={airCanvasRef}
+                  onCanvasUpdate={handleCanvasUpdate}
+                  onVoiceTrigger={handleVoiceTrigger}
+                  onGenerateTrigger={handleGenerateTrigger} 
+                  onSaveTrigger={handleSaveToGallery}
+                  isDrawingMode={true} 
+                  strokeColor={strokeColor}
+                  strokeWidth={strokeWidth}
+                  isResultVisible={!!generatedImage}
+                />
+            </div>
+
+            {/* Generated Image Overlay (Result) - Sits ON TOP of canvas, but lets gestures pass through logic via AirCanvas props */}
+            {generatedImage && (
+                <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300 flex items-center justify-center p-8">
+                    <div className="relative max-w-4xl max-h-full bg-white p-2 rounded-lg shadow-2xl border border-gray-600 flex flex-col">
+                        <img src={generatedImage} alt="Result" className="max-h-[70vh] object-contain border border-gray-200" />
+                        
+                        <div className="mt-2 flex items-center justify-between text-xs text-gray-600 bg-gray-50 p-2 rounded">
+                            <div className="flex items-center gap-4">
+                                <span className="font-bold text-black">{selectedStyle}</span>
+                                <span className="italic">"{prompt}"</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1 text-emerald-600 animate-pulse font-bold bg-emerald-50 px-2 py-1 rounded">
+                                    <span>🤟 Show 3 Fingers to Save</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => setGeneratedImage(null)}
+                            className="absolute -top-3 -right-3 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-md"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
                     </div>
                 </div>
-            ) : null}
+            )}
 
-            {/* The Actual Air Canvas */}
-            <AirCanvas 
-              ref={airCanvasRef}
-              onCanvasUpdate={handleCanvasUpdate} 
-              isDrawingMode={true} 
-            />
-
-            {/* "Resize Handles" (Visual only) */}
-            <div className="absolute -right-1 -bottom-1 w-2 h-2 bg-white border border-gray-500 cursor-nwse-resize z-40"></div>
-            <div className="absolute top-1/2 -right-1 w-2 h-2 bg-white border border-gray-500 cursor-ew-resize z-40"></div>
-            <div className="absolute -bottom-1 left-1/2 w-2 h-2 bg-white border border-gray-500 cursor-ns-resize z-40"></div>
          </div>
+
+         {/* Gallery Sidebar */}
+         {showGallery && (
+             <div className="w-64 bg-white border-l border-gray-300 flex flex-col shadow-xl z-30">
+                 <div className="p-3 border-b border-gray-200 font-semibold text-gray-700 flex justify-between items-center bg-gray-50">
+                     <span>Saved Gallery</span>
+                     <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{gallery.length}</span>
+                 </div>
+                 <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                     {gallery.length === 0 ? (
+                         <div className="text-center text-gray-400 mt-10 text-sm italic p-4">
+                             No images saved yet.<br/><br/>
+                             Use the 🤟 3-finger gesture when viewing a result to save it here!
+                         </div>
+                     ) : (
+                         gallery.map((item) => (
+                             <div key={item.id} className="group relative border border-gray-200 rounded-md overflow-hidden bg-gray-50 hover:shadow-md transition-shadow">
+                                 <img src={item.url} alt={item.prompt} className="w-full h-32 object-cover" />
+                                 <div className="p-2">
+                                     <p className="text-[10px] font-bold text-gray-700 truncate">{item.prompt}</p>
+                                     <p className="text-[9px] text-gray-500">{new Date(item.timestamp).toLocaleTimeString()}</p>
+                                 </div>
+                                 {/* Hover Actions */}
+                                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                     <button onClick={() => handleDownload(item.url)} className="p-1.5 bg-white text-blue-600 rounded-full hover:bg-blue-50" title="Download">
+                                         <Download className="w-4 h-4" />
+                                     </button>
+                                     <button onClick={() => deleteFromGallery(item.id)} className="p-1.5 bg-white text-red-600 rounded-full hover:bg-red-50" title="Delete">
+                                         <Trash2 className="w-4 h-4" />
+                                     </button>
+                                 </div>
+                             </div>
+                         ))
+                     )}
+                 </div>
+             </div>
+         )}
+
       </div>
 
       {/* 4. Status Bar */}
       <div className="bg-[#f0f0f0] border-t border-gray-300 px-2 py-1 text-[11px] flex items-center justify-between text-gray-600 select-none">
           <div className="flex gap-4">
-              <span className="flex items-center gap-1"><MousePointer2 className="w-3 h-3"/> Canvas: 800 x 600px</span>
-              <span className="border-l border-gray-300 pl-4">Powered by Gemini 2.5</span>
+              <span className="flex items-center gap-1"><MousePointer2 className="w-3 h-3"/> Canvas: Full Screen</span>
+              <span className="border-l border-gray-300 pl-4">Color: <span className="inline-block w-2 h-2 rounded-full" style={{backgroundColor: strokeColor}}></span></span>
+              <span className="border-l border-gray-300 pl-4">Size: {strokeWidth}px</span>
           </div>
           <div>
-              Zoom: 100%
+              Powered by Gemini 2.5
           </div>
       </div>
 

@@ -11,6 +11,10 @@ export interface GeneratedImage {
   timestamp: number;
 }
 
+export interface GalleryItem extends GeneratedImage {
+  id: string;
+}
+
 export interface HandPoint {
   x: number;
   y: number;

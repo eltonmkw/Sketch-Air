@@ -1,21 +1,28 @@
 import React, { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { HandPoint } from '../types';
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/+esm";
-import { Video, VideoOff, Eraser, Play, Pause, Hand, Power, AlertCircle } from 'lucide-react';
+import { Video, Play, Power, Trash2, Mic, Sparkles, Save } from 'lucide-react';
 
 interface AirCanvasProps {
   onCanvasUpdate: (dataUrl: string) => void;
+  onVoiceTrigger: () => void;
+  onGenerateTrigger: () => void;
+  onSaveTrigger: () => void;
   isDrawingMode: boolean;
-  strokeColor?: string;
+  strokeColor: string;
+  strokeWidth: number;
+  isResultVisible: boolean; // New prop to know if we are looking at a result
 }
 
 export interface AirCanvasHandle {
   clearCanvas: () => void;
+  undo: () => void;
 }
 
-const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate, isDrawingMode, strokeColor = '#000000' }, ref) => {
+const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate, onVoiceTrigger, onGenerateTrigger, onSaveTrigger, isDrawingMode, strokeColor, strokeWidth, isResultVisible }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawingCanvasRef = useRef<HTMLCanvasElement>(null); // Layer for INK
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null); // Layer for CURSOR (UI)
   
   // States
   const [isModelLoaded, setIsModelLoaded] = useState(false);
@@ -23,17 +30,70 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Default to enabled
   const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
-  const [gestureState, setGestureState] = useState<'drawing' | 'hover' | 'none'>('none');
+  const [gestureState, setGestureState] = useState<'drawing' | 'hover' | 'clearing' | 'voice' | 'generating' | 'saving' | 'none'>('none');
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   
   // Tracking Refs
   const lastPointRef = useRef<HandPoint | null>(null);
-  const isDrawingRef = useRef(false);
+  const smoothedPointRef = useRef<HandPoint | null>(null); // NEW: For stabilization
+  const isDrawingActiveRef = useRef(false); // Latch state for drawing
   const requestRef = useRef<number>(0);
+  
+  // Undo History
+  const historyRef = useRef<ImageData[]>([]);
 
-  // Expose clearCanvas to parent
+  // Gesture Consistency Refs
+  const pinchConsistencyRef = useRef<number>(0);
+  const oneFingerConsistencyRef = useRef<number>(0);
+  const peaceSignConsistencyRef = useRef<number>(0);
+  const threeFingerConsistencyRef = useRef<number>(0);
+  const lastTriggerTimeRef = useRef<number>(0); // Global cooldown for triggers
+
+  // Swipe Detection Refs
+  const lastWristXRef = useRef<number | null>(null);
+  const lastSwipeTimeRef = useRef<number>(0);
+
+  // Helper to save current state to history
+  const saveToHistory = () => {
+    const canvas = drawingCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Limit history to 20 steps to save memory
+        if (historyRef.current.length > 20) {
+            historyRef.current.shift();
+        }
+        historyRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      }
+    }
+  };
+
+  // Expose methods to parent
   useImperativeHandle(ref, () => ({
     clearCanvas: () => {
-      const canvas = canvasRef.current;
+      saveToHistory(); // Save before clearing
+      triggerClearCanvas();
+    },
+    undo: () => {
+      const canvas = drawingCanvasRef.current;
+      if (canvas && historyRef.current.length > 0) {
+         const ctx = canvas.getContext('2d');
+         if (ctx) {
+            const previousState = historyRef.current.pop();
+            if (previousState) {
+                ctx.putImageData(previousState, 0, 0);
+                onCanvasUpdate(canvas.toDataURL("image/png"));
+            }
+         }
+      } else {
+         setFeedbackMessage("Nothing to Undo");
+         setTimeout(() => setFeedbackMessage(null), 1000);
+      }
+    }
+  }));
+
+  const triggerClearCanvas = () => {
+      const canvas = drawingCanvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -42,10 +102,13 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.restore();
           onCanvasUpdate('');
+          
+          // Show Feedback
+          setFeedbackMessage("✨ Canvas Cleared!");
+          setTimeout(() => setFeedbackMessage(null), 1500);
         }
       }
-    }
-  }));
+  };
 
   // Initialize MediaPipe HandLandmarker
   useEffect(() => {
@@ -75,7 +138,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   }, []);
 
   const clearInternalCanvas = () => {
-     const canvas = canvasRef.current;
+     const canvas = drawingCanvasRef.current;
      if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -115,8 +178,11 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       else {
         setCameraAllowed(false);
         setGestureState('none');
-        isDrawingRef.current = false;
+        isDrawingActiveRef.current = false;
         lastPointRef.current = null;
+        smoothedPointRef.current = null;
+        pinchConsistencyRef.current = 0;
+        historyRef.current = []; // Clear history on stop
         
         // Auto-clear canvas on stop
         clearInternalCanvas();
@@ -143,29 +209,20 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(p2.x, p2.y);
     ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = 4; // Slightly thinner for "Paint" feel
+    ctx.lineWidth = strokeWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.stroke();
   };
 
-  // Helper: Check if a finger is extended
-  const isFingerExtended = (landmarks: any[], tipIdx: number, pipIdx: number) => {
-    const wrist = landmarks[0];
-    const tip = landmarks[tipIdx];
-    const pip = landmarks[pipIdx];
-    
-    // Distance from wrist
-    const distTip = Math.hypot(tip.x - wrist.x, tip.y - wrist.y);
-    const distPip = Math.hypot(pip.x - wrist.x, pip.y - wrist.y);
-    
-    // Tip must be significantly further from wrist than PIP
-    return distTip > (distPip * 1.1); 
+  // Linear Interpolation for Smoothing
+  const lerp = (start: number, end: number, factor: number) => {
+    return start + (end - start) * factor;
   };
 
   // Main Animation Loop
   const animate = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !handLandmarker || !cameraAllowed) {
+    if (!videoRef.current || !drawingCanvasRef.current || !overlayCanvasRef.current || !handLandmarker || !cameraAllowed) {
       return;
     }
 
@@ -175,16 +232,36 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       return;
     }
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const drawingCanvas = drawingCanvasRef.current;
+    const overlayCanvas = overlayCanvasRef.current;
+    
+    const drawingCtx = drawingCanvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
+    
+    if (!drawingCtx || !overlayCtx) return;
 
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1);
+    // 1. Sync Canvas Sizes & Transforms
+    if (drawingCanvas.width !== video.videoWidth || drawingCanvas.height !== video.videoHeight) {
+      drawingCanvas.width = video.videoWidth;
+      drawingCanvas.height = video.videoHeight;
+      // Mirror transform for Drawing Layer
+      drawingCtx.translate(drawingCanvas.width, 0);
+      drawingCtx.scale(-1, 1);
     }
+    
+    if (overlayCanvas.width !== video.videoWidth || overlayCanvas.height !== video.videoHeight) {
+      overlayCanvas.width = video.videoWidth;
+      overlayCanvas.height = video.videoHeight;
+      // Mirror transform for Overlay Layer
+      overlayCtx.translate(overlayCanvas.width, 0);
+      overlayCtx.scale(-1, 1);
+    }
+
+    // 2. Clear Overlay Layer (UI/Cursor)
+    overlayCtx.save();
+    overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    overlayCtx.restore();
 
     let startTimeMs = performance.now();
     let results;
@@ -198,89 +275,265 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
     if (results && results.landmarks && results.landmarks.length > 0) {
       const landmarks = results.landmarks[0];
       
-      // Index finger tip (8)
       const indexTip = landmarks[8];
-      const x = indexTip.x * canvas.width;
-      const y = indexTip.y * canvas.height;
-      const currentPoint = { x, y };
+      const thumbTip = landmarks[4];
+      const wrist = landmarks[0];
 
-      // Check all fingers
-      const indexExtended = isFingerExtended(landmarks, 8, 6);
-      const middleExtended = isFingerExtended(landmarks, 12, 10);
-      const ringExtended = isFingerExtended(landmarks, 16, 14);
-      const pinkyExtended = isFingerExtended(landmarks, 20, 18);
-
-      // Count extended fingers
-      const extendedCount = [indexExtended, middleExtended, ringExtended, pinkyExtended].filter(Boolean).length;
-
-      // Logic: 
-      // DRAW: Only Index extended (Count === 1 && Index is True)
-      // HOVER: Anything else (Open hand, Fist, Peace sign, etc.)
+      // Calculate Pinch Distance
+      const pinchDistance = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
       
-      let shouldDraw = false;
-      let state: 'drawing' | 'hover' = 'hover';
+      // --- CURSOR STABILIZATION LOGIC ---
+      const rawX = indexTip.x * drawingCanvas.width;
+      const rawY = indexTip.y * drawingCanvas.height;
 
-      if (indexExtended && extendedCount === 1) {
-        shouldDraw = true;
-        state = 'drawing';
+      // Smoothing Factor (0.1 = Very smooth/slow, 0.9 = Raw/jittery)
+      // 0.25 is a good balance for drawing
+      const SMOOTHING_FACTOR = 0.25;
+
+      if (!smoothedPointRef.current) {
+          smoothedPointRef.current = { x: rawX, y: rawY };
       } else {
-        shouldDraw = false;
-        state = 'hover';
+          smoothedPointRef.current = {
+              x: lerp(smoothedPointRef.current.x, rawX, SMOOTHING_FACTOR),
+              y: lerp(smoothedPointRef.current.y, rawY, SMOOTHING_FACTOR)
+          };
       }
 
-      // Force Pause Override
+      // We use the Smoothed point for everything (Drawing & Cursor)
+      const currentPoint = smoothedPointRef.current;
+      const x = currentPoint.x;
+      const y = currentPoint.y;
+
+
+      // Cooldown check for special triggers
+      const TRIGGER_COOLDOWN = 3000; // 3 seconds between voice/gen/save triggers
+      const canTrigger = Date.now() - lastTriggerTimeRef.current > TRIGGER_COOLDOWN;
+
+      // --- PINCH (DRAWING) LOGIC ---
+      const canDraw = !isResultVisible && isDrawingEnabled; 
+
+      const START_THRESHOLD = 0.04; 
+      const STOP_THRESHOLD = 0.08; 
+      const REQUIRED_CONSISTENT_FRAMES = 5; 
+
+      if (pinchDistance < START_THRESHOLD) {
+          pinchConsistencyRef.current = pinchConsistencyRef.current + 1;
+          
+          if (pinchConsistencyRef.current >= REQUIRED_CONSISTENT_FRAMES) {
+             if (!isDrawingActiveRef.current && canDraw) {
+                 saveToHistory();
+                 // Reset the smoothed point to current to avoid jumping lines on start
+                 lastPointRef.current = currentPoint; 
+             }
+             if (canDraw) {
+                 isDrawingActiveRef.current = true;
+             }
+          }
+      } else {
+          pinchConsistencyRef.current = 0;
+          if (pinchDistance > STOP_THRESHOLD) {
+             isDrawingActiveRef.current = false;
+             // Don't nullify lastPoint immediately here to avoid glitches, handled below
+          }
+      }
+
+      // --- SWIPE TO ERASE LOGIC ---
+      if (!isDrawingActiveRef.current && canDraw) {
+          if (lastWristXRef.current !== null) {
+              const dx = wrist.x - lastWristXRef.current;
+              // Threshold: 0.06 normalized units per frame is a very fast movement
+              const SWIPE_SPEED_THRESHOLD = 0.06;
+              const COOLDOWN_MS = 1000;
+
+              if (Math.abs(dx) > SWIPE_SPEED_THRESHOLD) {
+                  const now = Date.now();
+                  if (now - lastSwipeTimeRef.current > COOLDOWN_MS) {
+                      saveToHistory(); // Save before swipe erase
+                      setGestureState('clearing');
+                      triggerClearCanvas();
+                      lastSwipeTimeRef.current = now;
+                  }
+              }
+          }
+          lastWristXRef.current = wrist.x;
+      } else {
+          lastWristXRef.current = null; 
+      }
+      // ----------------------------
+
+      // --- GESTURE LOGIC: 1 Finger (Voice), 2 Fingers (Gen), 3 Fingers (Save) ---
+      const isExtended = (tipIdx: number, pipIdx: number) => {
+          return landmarks[tipIdx].y < landmarks[pipIdx].y;
+      }
+      
+      const indexExtended = isExtended(8, 6);
+      const middleExtended = isExtended(12, 10);
+      const ringExtended = isExtended(16, 14);
+      const pinkyExtended = isExtended(20, 18);
+      
+      const ONE_FINGER_POSE = indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
+      const PEACE_SIGN_POSE = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
+      const THREE_FINGER_POSE = indexExtended && middleExtended && ringExtended && !pinkyExtended;
+
+      // Special Trigger Logic (only if not drawing and off cooldown)
+      if (!isDrawingActiveRef.current && canTrigger) {
+          
+          const HOLD_FRAMES = 30; // Hold for ~1 second (30fps)
+
+          // VOICE (1 Finger)
+          if (ONE_FINGER_POSE) {
+              oneFingerConsistencyRef.current++;
+              if (oneFingerConsistencyRef.current > HOLD_FRAMES) {
+                  onVoiceTrigger();
+                  lastTriggerTimeRef.current = Date.now();
+                  oneFingerConsistencyRef.current = 0;
+                  setFeedbackMessage("🎤 Listening...");
+                  setTimeout(() => setFeedbackMessage(null), 2000);
+              }
+          } else {
+              oneFingerConsistencyRef.current = 0;
+          }
+
+          // GENERATE (2 Fingers)
+          if (PEACE_SIGN_POSE) {
+              peaceSignConsistencyRef.current++;
+              if (peaceSignConsistencyRef.current > HOLD_FRAMES) {
+                  onGenerateTrigger();
+                  lastTriggerTimeRef.current = Date.now();
+                  peaceSignConsistencyRef.current = 0;
+                  setFeedbackMessage("✨ Transforming...");
+                  setTimeout(() => setFeedbackMessage(null), 2000);
+              }
+          } else {
+              peaceSignConsistencyRef.current = 0;
+          }
+
+          // SAVE (3 Fingers)
+          if (THREE_FINGER_POSE) {
+              threeFingerConsistencyRef.current++;
+              if (threeFingerConsistencyRef.current > HOLD_FRAMES) {
+                  onSaveTrigger();
+                  lastTriggerTimeRef.current = Date.now();
+                  threeFingerConsistencyRef.current = 0;
+                  setFeedbackMessage("💾 Saving to Gallery...");
+                  setTimeout(() => setFeedbackMessage(null), 2000);
+              }
+          } else {
+              threeFingerConsistencyRef.current = 0;
+          }
+      }
+      // ---------------------------------------------------------
+
+
       if (!isDrawingEnabled) {
-        shouldDraw = false;
-        // Keep visual state as hover to show cursor
-        state = 'hover';
+        isDrawingActiveRef.current = false;
+        pinchConsistencyRef.current = 0;
       }
 
-      setGestureState(state);
+      // Determine Visual State for Legend
+      const isDrawing = isDrawingActiveRef.current;
+      if (Date.now() - lastSwipeTimeRef.current < 500) {
+          setGestureState('clearing');
+      } else if (threeFingerConsistencyRef.current > 10) {
+          setGestureState('saving');
+      } else if (peaceSignConsistencyRef.current > 10) {
+          setGestureState('generating');
+      } else if (oneFingerConsistencyRef.current > 10) {
+          setGestureState('voice');
+      } else {
+          setGestureState(isDrawing ? 'drawing' : 'hover');
+      }
 
-      if (shouldDraw) {
-        if (!isDrawingRef.current) {
+      // 3. DRAWING Logic
+      if (isDrawing) {
+        if (!lastPointRef.current) {
             lastPointRef.current = currentPoint;
-        } else if (lastPointRef.current) {
-             drawLine(lastPointRef.current, currentPoint, ctx);
+        } else {
+             drawLine(lastPointRef.current, currentPoint, drawingCtx);
              lastPointRef.current = currentPoint;
         }
-        isDrawingRef.current = true;
       } else {
         // Just stopped drawing
-        if (isDrawingRef.current) {
-           onCanvasUpdate(canvas.toDataURL("image/png"));
+        if (lastPointRef.current) {
+           onCanvasUpdate(drawingCanvas.toDataURL("image/png"));
+           lastPointRef.current = null;
         }
-        isDrawingRef.current = false;
-        lastPointRef.current = null;
       }
 
-      // Visual Feedback Cursor
-      ctx.beginPath();
-      const radius = shouldDraw ? 5 : 10;
-      ctx.arc(x, y, radius, 0, 2 * Math.PI);
-      
-      if (state === 'drawing' && isDrawingEnabled) {
-         ctx.fillStyle = strokeColor;
-         ctx.strokeStyle = '#000000';
-         ctx.lineWidth = 1;
-      } else {
-         // Hover State
-         ctx.fillStyle = 'rgba(255, 255, 0, 0.4)'; // Transparent Yellow
-         ctx.strokeStyle = '#000000';
-         ctx.lineWidth = 1;
+      // 4. OVERLAY Logic (Transient Cursor)
+      if (!isResultVisible) { 
+          overlayCtx.beginPath();
+          const radius = isDrawing ? (strokeWidth / 2) + 2 : 10; 
+          overlayCtx.arc(x, y, radius, 0, 2 * Math.PI);
+          
+          if (isDrawing) {
+             overlayCtx.fillStyle = strokeColor;
+             overlayCtx.strokeStyle = '#ffffff';
+             overlayCtx.lineWidth = 2;
+          } else {
+             overlayCtx.fillStyle = 'rgba(0, 150, 255, 0.4)'; 
+             overlayCtx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+             overlayCtx.lineWidth = 2;
+          }
+          overlayCtx.fill();
+          overlayCtx.stroke();
       }
 
-      ctx.fill();
-      ctx.stroke();
+      // Visualization for Trigger Holds
+      const drawLoadingRing = (cx: number, cy: number, progress: number, color: string) => {
+          overlayCtx.beginPath();
+          overlayCtx.arc(cx, cy, 30, 0, 2 * Math.PI * progress);
+          overlayCtx.strokeStyle = color;
+          overlayCtx.lineWidth = 6;
+          overlayCtx.lineCap = 'round';
+          overlayCtx.stroke();
+      };
+
+      if (oneFingerConsistencyRef.current > 5) {
+          drawLoadingRing(x, y, oneFingerConsistencyRef.current / 30, 'red');
+      }
+      if (peaceSignConsistencyRef.current > 5) {
+          drawLoadingRing(x, y, peaceSignConsistencyRef.current / 30, 'purple');
+      }
+      if (threeFingerConsistencyRef.current > 5) {
+          drawLoadingRing(x, y, threeFingerConsistencyRef.current / 30, '#10B981'); 
+      }
+
+      // Helper line to show pinch proximity
+      if (!isDrawing && canDraw && pinchDistance < STOP_THRESHOLD * 2 && oneFingerConsistencyRef.current < 5 && peaceSignConsistencyRef.current < 5 && threeFingerConsistencyRef.current < 5) {
+          const tx = thumbTip.x * drawingCanvas.width;
+          const ty = thumbTip.y * drawingCanvas.height;
+          
+          overlayCtx.beginPath();
+          // We use the Smoothed position for the source, but thumb is raw (less critical)
+          // Ideally smooth thumb too, but for UI line it's okay.
+          overlayCtx.moveTo(x, y);
+          overlayCtx.lineTo(tx, ty);
+          
+          if (pinchConsistencyRef.current > 0) {
+             overlayCtx.strokeStyle = 'rgba(255, 165, 0, 0.8)'; // Orange = "Hold it..."
+             overlayCtx.lineWidth = 3;
+          } else {
+             overlayCtx.strokeStyle = pinchDistance < START_THRESHOLD * 1.5 ? 'rgba(0, 255, 0, 0.3)' : 'rgba(255, 0, 0, 0.1)';
+             overlayCtx.lineWidth = 2;
+          }
+          overlayCtx.stroke();
+      }
 
     } else {
         setGestureState('none');
-        isDrawingRef.current = false;
+        isDrawingActiveRef.current = false;
         lastPointRef.current = null;
+        smoothedPointRef.current = null; // Reset smoothing
+        pinchConsistencyRef.current = 0;
+        lastWristXRef.current = null;
+        oneFingerConsistencyRef.current = 0;
+        peaceSignConsistencyRef.current = 0;
+        threeFingerConsistencyRef.current = 0;
     }
 
     requestRef.current = requestAnimationFrame(animate);
-  }, [cameraAllowed, handLandmarker, strokeColor, onCanvasUpdate, isDrawingEnabled]);
+  }, [cameraAllowed, handLandmarker, strokeColor, strokeWidth, onCanvasUpdate, isDrawingEnabled, onVoiceTrigger, onGenerateTrigger, onSaveTrigger, isResultVisible]);
 
   useEffect(() => {
     if (cameraAllowed) {
@@ -293,7 +546,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
 
   return (
     <div className="relative w-full h-full bg-white overflow-hidden group">
-      {/* The Webcam layer (opacity lowered to look like it's "behind" the paper slightly, or tracing paper) */}
+      {/* 1. Video Layer (Mirrored) */}
       <video
         ref={videoRef}
         autoPlay
@@ -302,12 +555,30 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
         className={`absolute top-0 left-0 w-full h-full object-cover transform -scale-x-100 transition-opacity duration-500 ${cameraAllowed ? 'opacity-50' : 'opacity-0'}`}
       />
       
+      {/* 2. Drawing Layer (Persists Ink) - Hidden if result is visible */}
       <canvas
-        ref={canvasRef}
-        className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-500 ${cameraAllowed ? 'opacity-100' : 'opacity-0'}`}
+        ref={drawingCanvasRef}
+        className={`absolute top-0 left-0 w-full h-full object-cover transition-opacity duration-500 ${cameraAllowed && !isResultVisible ? 'opacity-100' : 'opacity-0'}`}
       />
 
-      {/* Start / Loading Screen (Styled like a system message) */}
+      {/* 3. Overlay Layer (Cursor/UI) - Always visible for gestures */}
+      <canvas
+        ref={overlayCanvasRef}
+        className={`absolute top-0 left-0 w-full h-full object-cover pointer-events-none z-10 ${cameraAllowed ? 'opacity-100' : 'opacity-0'}`}
+      />
+
+      {/* Feedback Toast */}
+      {feedbackMessage && (
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-black/80 text-white px-6 py-4 rounded-xl text-xl font-bold animate-bounce shadow-2xl flex items-center gap-3 border border-white/20 backdrop-blur-sm">
+            {feedbackMessage.includes('Cleared') && <Trash2 className="w-8 h-8 text-white" />}
+            {feedbackMessage.includes('Listening') && <Mic className="w-8 h-8 text-red-400" />}
+            {feedbackMessage.includes('Transforming') && <Sparkles className="w-8 h-8 text-purple-400" />}
+            {feedbackMessage.includes('Saving') && <Save className="w-8 h-8 text-emerald-400" />}
+            {feedbackMessage}
+        </div>
+      )}
+
+      {/* Start / Loading Screen */}
       {(!isCameraActive || !isModelLoaded) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#f0f0f0] z-20 text-gray-700">
           {!isModelLoaded ? (
@@ -336,22 +607,31 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
         </div>
       )}
 
-      {/* Control Overlay (Styled like status indicators) */}
-      {isCameraActive && (
+      {/* Control Overlay - Hide if result is visible to reduce clutter */}
+      {isCameraActive && !isResultVisible && (
         <>
-          <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
-              <div className="bg-white/90 border border-gray-400 text-[10px] px-2 py-1 shadow-sm text-black">
-                 <p className="font-bold mb-1 border-b border-gray-300">Gestures</p>
-                 <div className={`flex items-center gap-2 ${gestureState === 'drawing' && isDrawingEnabled ? 'text-green-700 font-bold' : 'text-gray-500'}`}>
-                    <span>☝ Index: Draw</span>
+          <div className="absolute top-2 left-2 z-20 flex flex-col gap-1">
+              <div className="bg-white/90 border border-gray-400 text-[10px] px-2 py-1 shadow-sm text-black rounded-sm backdrop-blur-sm">
+                 <p className="font-bold mb-1 border-b border-gray-300 pb-1">Gestures</p>
+                 <div className={`flex items-center gap-2 mb-1 ${gestureState === 'drawing' ? 'text-green-700 font-bold' : 'text-gray-500'}`}>
+                    <span>👌 Pinch (Hold): Draw</span>
                  </div>
-                 <div className={`flex items-center gap-2 ${gestureState === 'hover' ? 'text-yellow-700 font-bold' : 'text-gray-500'}`}>
-                    <span>✋ Open: Move</span>
+                 <div className={`flex items-center gap-2 mb-1 ${gestureState === 'voice' ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
+                    <span>☝️ 1 Finger: Voice</span>
+                 </div>
+                 <div className={`flex items-center gap-2 mb-1 ${gestureState === 'generating' ? 'text-purple-600 font-bold' : 'text-gray-500'}`}>
+                    <span>✌️ 2 Fingers: Magic</span>
+                 </div>
+                 <div className={`flex items-center gap-2 mb-1 ${gestureState === 'saving' ? 'text-emerald-600 font-bold' : 'text-gray-500'}`}>
+                    <span>🤟 3 Fingers: Save</span>
+                 </div>
+                 <div className={`flex items-center gap-2 ${gestureState === 'clearing' ? 'text-red-700 font-bold' : 'text-gray-500'}`}>
+                    <span>👋 Swipe: Erase</span>
                  </div>
               </div>
           </div>
 
-          <div className="absolute bottom-2 right-2 z-10 flex gap-2">
+          <div className="absolute bottom-2 right-2 z-20 flex gap-2">
              <button 
                onClick={() => setIsDrawingEnabled(!isDrawingEnabled)}
                className={`px-3 py-1 bg-white border border-gray-400 text-xs shadow-sm hover:bg-gray-50 active:bg-gray-100 flex items-center gap-2 ${!isDrawingEnabled ? 'text-red-600 font-bold' : 'text-green-700'}`}

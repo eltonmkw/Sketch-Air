@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Mic, MicOff } from 'lucide-react';
 
 // --- Type Definitions for Web Speech API ---
@@ -60,7 +60,12 @@ interface VoiceInputProps {
   isProcessing?: boolean;
 }
 
-const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscript, isProcessing = false }) => {
+export interface VoiceInputHandle {
+  toggle: () => void;
+  isListening: boolean;
+}
+
+const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(({ onTranscript, isProcessing = false }, ref) => {
   const [isListening, setIsListening] = useState(false);
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
 
@@ -111,6 +116,12 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscript, isProcessing = fa
     }
   };
 
+  // Expose method to parent
+  useImperativeHandle(ref, () => ({
+    toggle: toggleListening,
+    isListening: isListening
+  }));
+
   if (!recognition) return null;
 
   return (
@@ -127,6 +138,6 @@ const VoiceInput: React.FC<VoiceInputProps> = ({ onTranscript, isProcessing = fa
       {isListening ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
     </button>
   );
-};
+});
 
 export default VoiceInput;
