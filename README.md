@@ -1,20 +1,28 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
-# Run and deploy your AI Studio app
-
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/drive/1nnD5ttZajsYZgD_G6sBJFpYUYgg0FXNC
-
-## Run Locally
-
-**Prerequisites:**  Node.js
+# ✨ Sketch Air
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+> Draw in the air, transform with AI.
+
+![Sketch Air Thumbnail](./sketch-air-thumbnail.jpg)
+
+Sketch Air lets you draw in mid-air using just your hand and a webcam. Your sketches are then transformed into beautiful artwork by AI.
+
+## Quick Start
+
+1. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+2. **Start the app**
+   ```bash
+   npm run dev
+   ```
+
+3. **Open in your browser**  
+   Visit [http://localhost:3000](http://localhost:3000)
+
+
+---
+
+Built with ❤️ for AI Hackathon
