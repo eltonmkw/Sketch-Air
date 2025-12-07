@@ -161,12 +161,20 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
         if (!videoRef.current) return;
         
         try {
+          // Request AUDIO here as well to prompt for permissions early!
+          // We won't use the audio track for anything, but it ensures SpeechRecognition
+          // has an easier time later.
           stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: 640, height: 480, facingMode: "user" }
+            video: { width: 640, height: 480, facingMode: "user" },
+            audio: true 
           });
           
           if (videoRef.current) {
-            videoRef.current.srcObject = stream;
+            // Only attach the video track to the video element to avoid feedback loop
+            const videoTrack = stream.getVideoTracks()[0];
+            const videoStream = new MediaStream([videoTrack]);
+            videoRef.current.srcObject = videoStream;
+            
             videoRef.current.onloadeddata = () => {
               setCameraAllowed(true);
               setIsDrawingEnabled(true);
@@ -177,7 +185,24 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           }
         } catch (err) {
           console.error("Camera error:", err);
-          setIsCameraActive(false); 
+          // Fallback: Try video only if audio failed (e.g. user denied mic)
+          try {
+             stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480, facingMode: "user" }
+             });
+             if (videoRef.current) {
+                 videoRef.current.srcObject = stream;
+                 videoRef.current.onloadeddata = () => {
+                    setCameraAllowed(true);
+                    setIsDrawingEnabled(true);
+                    setIsWarmup(true);
+                    setTimeout(() => setIsWarmup(false), 2000); 
+                  };
+             }
+          } catch (e) {
+             console.error("Camera fallback error:", e);
+             setIsCameraActive(false); 
+          }
         }
       } 
       // STOP CAMERA
@@ -198,6 +223,10 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
           const currentStream = videoRef.current.srcObject as MediaStream;
           currentStream.getTracks().forEach(track => track.stop());
           videoRef.current.srcObject = null;
+        }
+        // Also stop the original stream if it exists (for audio tracks)
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
         }
       }
     };
@@ -410,7 +439,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       const pinkyExtended = isExtended(20, 18);
       
       // CRITICAL FIX: Ensure thumb is FAR from index for One Finger Pose to avoid false triggers while drawing
-      const thumbIsNotPinching = pinchDistance > 0.15; 
+      const thumbIsNotPinching = pinchDistance > 0.20; 
       // Thumbs Up: Thumb tip above IP, others curled
       const thumbIsUp = thumbTip.y < thumbIP.y;
 
