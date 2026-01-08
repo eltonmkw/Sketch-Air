@@ -72,6 +72,9 @@ const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(({ onTranscript
   
   // Ref to store interim text (gray text) in case the engine stops without finalizing
   const interimTranscriptRef = useRef('');
+  
+  // Ref to track listening state for use in callbacks (avoids stale closure)
+  const isListeningRef = useRef(false);
 
   const startListening = () => {
     const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -112,24 +115,30 @@ const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(({ onTranscript
     };
 
     recog.onerror = (event: SpeechRecognitionErrorEvent) => {
-      // Ignore benign errors
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-         console.warn("Speech Error:", event.error);
-      }
-      // If actual error, we might want to stop UI spinning
+      console.warn("Speech Error:", event.error, event.message);
+      
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          alert("Microphone access denied. Please allow microphone permissions in your browser.");
           setIsListening(false);
+          isListeningRef.current = false;
+      } else if (event.error === 'no-speech') {
+          console.log("No speech detected - try speaking louder or closer to mic");
+      } else if (event.error === 'audio-capture') {
+          alert("No microphone found. Please check your audio input device.");
+          setIsListening(false);
+          isListeningRef.current = false;
       }
     };
 
     recog.onend = () => {
       // FALLBACK: If the browser stopped listening (e.g. silence timeout) 
       // but we had some text pending in the buffer that wasn't finalized, use it!
-      if (interimTranscriptRef.current && isListening) {
+      if (interimTranscriptRef.current && isListeningRef.current) {
          onTranscript(interimTranscriptRef.current);
       }
       
       setIsListening(false);
+      isListeningRef.current = false;
       recognitionRef.current = null;
       interimTranscriptRef.current = '';
     };
@@ -138,9 +147,11 @@ const VoiceInput = forwardRef<VoiceInputHandle, VoiceInputProps>(({ onTranscript
       recog.start();
       recognitionRef.current = recog;
       setIsListening(true);
+      isListeningRef.current = true;
     } catch (e) {
       console.error("Failed to start speech recognition:", e);
       setIsListening(false);
+      isListeningRef.current = false;
     }
   };
 
