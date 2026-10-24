@@ -13,8 +13,9 @@
 
 ## Continuous integration
 
-GitHub Actions runs **Build and typecheck** on every push and pull request, with
-manual runs also available. Using Node.js 22, it installs the locked dependencies
+GitHub Actions runs **Build and typecheck** on pushes to `development` and on
+non-draft pull requests when opened, reopened, updated, or marked ready for review.
+Draft pull request jobs are skipped. Using Node.js 22, it installs the locked dependencies
 with `npm ci`, runs `npm run typecheck`, and builds with `npm run build`.
 No API key is needed. These checks validate source types and bundling; they do
 not test webcam, speech recognition, CDN availability, or live Gemini requests.
