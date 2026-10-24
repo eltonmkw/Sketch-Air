@@ -11,6 +11,20 @@
 
 ---
 
+## Continuous integration
+
+GitHub Actions runs **Build and typecheck** on every push and pull request, with
+manual runs also available. Using Node.js 22, it installs the locked dependencies
+with `npm ci`, runs `npm run typecheck`, and builds with `npm run build`.
+No API key is needed. These checks validate source types and bundling; they do
+not test webcam, speech recognition, CDN availability, or live Gemini requests.
+
+The MediaPipe CDN import uses declarations from the matching `0.10.0` development
+dependency. Keep both versions aligned when upgrading hand tracking.
+
+To make this check mandatory before merging, select **Build and typecheck** in
+the target branch's GitHub ruleset or branch protection settings after its first run.
+
 ## 🚀 Quick Start
 
 <ol>
