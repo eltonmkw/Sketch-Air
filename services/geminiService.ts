@@ -2,8 +2,24 @@ import { GoogleGenAI } from "@google/genai";
 import { ArtStyle } from "../types";
 import { STYLE_PROMPTS } from "../constants";
 
-// Initialize the client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+export async function testApiKey(apiKey: string): Promise<void> {
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 15000 } });
+  try {
+    await ai.models.get({ model: 'gemini-2.5-flash-image' });
+  } catch (error) {
+    const status = (error as { status?: number })?.status;
+    if (status === 400 || status === 401) {
+      throw new Error('Google rejected this key. Check that you copied a valid Gemini API key.');
+    }
+    if (status === 403) {
+      throw new Error('Access denied. Check the key’s API and website restrictions and Gemini API access.');
+    }
+    if (status === 429) {
+      throw new Error('Google is rate limiting this request. Try again shortly.');
+    }
+    throw new Error('Connection test failed. Check your connection, API access, and browser restrictions, then try again.');
+  }
+}
 
 /**
  * Generates an image based on a sketch (base64) and a prompt/style.
@@ -11,9 +27,14 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 export const generateImageFromSketch = async (
   base64Image: string,
   userPrompt: string,
-  style: ArtStyle
+  style: ArtStyle,
+  apiKey: string
 ): Promise<string> => {
   try {
+    if (!apiKey) {
+      throw new Error("Add your Gemini API key using the API key button to generate artwork.");
+    }
+    const ai = new GoogleGenAI({ apiKey });
     const stylePrompt = STYLE_PROMPTS[style];
     
     // Clean the base64 string to get just the data
@@ -76,7 +97,6 @@ export const generateImageFromSketch = async (
     throw new Error("No image generated. Please try again with a clearer sketch.");
 
   } catch (error) {
-    console.error("Gemini Image Generation Error:", error);
     throw error;
   }
 };

@@ -6,6 +6,8 @@ import VoiceInput, { VoiceInputHandle } from './components/VoiceInput';
 import { ArtStyle, GalleryItem } from './types';
 import { STYLE_ICONS } from './constants';
 import { generateImageFromSketch } from './services/geminiService';
+import ApiKeyDialog from './components/ApiKeyDialog';
+import { readApiKey } from './services/apiKeyStorage';
 
 const PRESET_COLORS = [
     '#000000', // Black
@@ -19,6 +21,8 @@ const PRESET_COLORS = [
 ];
 
 function App() {
+  const [apiKey, setApiKey] = useState(readApiKey);
+  const [showApiKeyDialog, setShowApiKeyDialog] = useState(() => !readApiKey());
   const [canvasDataUrl, setCanvasDataUrl] = useState<string>("");
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -45,6 +49,10 @@ function App() {
   }, []);
 
   const handleGenerate = async () => {
+    if (!apiKey) {
+      setShowApiKeyDialog(true);
+      return;
+    }
     if (!canvasDataUrl) {
         setError("Canvas is empty!");
         setTimeout(() => setError(null), 3000);
@@ -59,7 +67,7 @@ function App() {
       // Save the current prompt to resultPrompt before clearing
       setResultPrompt(prompt);
       
-      const result = await generateImageFromSketch(canvasDataUrl, prompt, selectedStyle);
+      const result = await generateImageFromSketch(canvasDataUrl, prompt, selectedStyle, apiKey);
       setGeneratedImage(result);
       
       // Clear the input prompt so user can start fresh immediately
@@ -108,7 +116,7 @@ function App() {
       if (!isGenerating && !generatedImage) {
           handleGenerate();
       }
-  }, [isGenerating, generatedImage, canvasDataUrl, prompt, selectedStyle]); 
+  }, [isGenerating, generatedImage, canvasDataUrl, prompt, selectedStyle, apiKey]);
 
   const handleSaveToGallery = useCallback(() => {
       if (generatedImage) {
@@ -138,6 +146,10 @@ function App() {
   
   // Quick Style Switch Handler (Re-generate with same sketch)
   const handleStyleSwitch = (style: ArtStyle) => {
+      if (!apiKey) {
+          setShowApiKeyDialog(true);
+          return;
+      }
       setSelectedStyle(style);
       // We need to wait for state to update, but handleGenerate uses current state.
       // A cleaner way is to pass args to generate, but for now we set state and rely on effect or user click.
@@ -148,7 +160,7 @@ function App() {
       // Don't clear result yet, let it update in place
       
       // Use the existing canvas data and the EXISTING result prompt
-      generateImageFromSketch(canvasDataUrl, resultPrompt, style)
+      generateImageFromSketch(canvasDataUrl, resultPrompt, style, apiKey)
         .then(result => {
              setGeneratedImage(result);
         })
@@ -162,6 +174,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-[#dfe8f5]">
+      <ApiKeyDialog open={showApiKeyDialog} hasKey={Boolean(apiKey)} savedKey={apiKey} onSave={setApiKey} onClose={() => setShowApiKeyDialog(false)} />
       
       {/* 1. Title Bar */}
       <div className="bg-white border-b border-gray-300 flex items-center px-2 py-1 gap-2 text-xs select-none">
@@ -179,6 +192,7 @@ function App() {
          <div className="flex-1 text-center font-normal text-gray-700">
             Untitled - Sketch Air
          </div>
+         <button type="button" onClick={() => setShowApiKeyDialog(true)} disabled={isGenerating} className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-50">API key{apiKey ? ' ✓' : ''}</button>
          <button onClick={() => setShowGallery(!showGallery)} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] ${showGallery ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>
              <ImageIcon className="w-3 h-3" />
              Gallery ({gallery.length})
