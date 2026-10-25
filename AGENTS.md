@@ -1,5 +1,24 @@
 # Instructions for working on Sketch Air
 
+## Superpowers startup
+
+At the start of every new session in this repository, read
+[using-superpowers](./.agents/skills/using-superpowers/SKILL.md) and its
+[Codex adaptation](./.agents/skills/using-superpowers/references/codex-tools.md)
+before beginning task work. Apply the relevant bundled skills throughout the task.
+Codex discovers project skills in `.agents/skills/`; if a skill is not listed by
+the runtime, read its `SKILL.md` directly from that directory. References such as
+`superpowers:systematic-debugging` map to `.agents/skills/systematic-debugging/SKILL.md`.
+
+User and runtime instructions take precedence over bundled skill instructions.
+Keep the project-specific boundaries below in force. Use the tools and model
+allowlist actually available in the session; when subagents are unavailable or
+not permitted, execute the plan sequentially. Do not change global Codex settings
+as part of startup.
+
+The skills are vendored and require no startup download. See
+[installation notes](./.agents/SUPERPOWERS.md) for provenance and update guidance.
+
 ## Read first
 
 Read [DESIGN.md](./DESIGN.md) before changing the interface or interaction model. It records the current design and its limitations; this file defines how to maintain it. Read the relevant implementation before editing. If an approved change alters the design, update both documents so they remain consistent. Do not treat documented gaps as authorization to expand task scope.
