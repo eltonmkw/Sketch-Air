@@ -1,0 +1,23 @@
+{
+  "name": "superpowers",
+  "version": "6.3.0",
+  "source_repository": "https://github.com/openai/plugins",
+  "source_commit": "0722921d5542fc593105c27bd52630babd8b8c2a",
+  "source_path": "plugins/superpowers",
+  "skills": [
+    "brainstorming",
+    "dispatching-parallel-agents",
+    "executing-plans",
+    "finishing-a-development-branch",
+    "receiving-code-review",
+    "requesting-code-review",
+    "subagent-driven-development",
+    "systematic-debugging",
+    "test-driven-development",
+    "using-git-worktrees",
+    "using-superpowers",
+    "verification-before-completion",
+    "writing-plans",
+    "writing-skills"
+  ]
+}
