@@ -259,3 +259,35 @@ As a creator, I want to download a generated image, so that I can retain it outs
 Source: [App — handleDownload, File ribbon, gallery actions](./App.tsx).
 
 Limitations: the title-bar Save Project icon has no handler. The download extension is fixed even though the model response can specify another image MIME type.
+
+## Refinement questions
+
+These are **proposed decisions**, not existing functionality or approved implementation. Add your answers in the final column.
+
+| ID | Question | Related stories | Your decision |
+| --- | --- | --- | --- |
+| Q-01 | Who is the primary audience, and what outcome defines a successful session? | All | |
+| Q-02 | Should first-time users see camera onboarding before key setup, with key setup only when generating? | US-01–04 | |
+| Q-03 | Should mouse/touch drawing and a Save to Gallery button be required alternatives to gestures? | US-05, US-15 | |
+| Q-04 | Should sketches and gallery entries survive refresh, and if so, locally or through an account? | US-07–09, US-15–16 | |
+| Q-05 | Should stopping the camera preserve ink? Should clearing or deleting ask for confirmation or offer undo? | US-07–09, US-16 | |
+| Q-06 | Should descriptions be required, retained after generation, or editable directly on a result? | US-10, US-14 | |
+| Q-07 | Which languages and voice-error recovery should be supported? | US-11 | |
+| Q-08 | Should regeneration freeze the original sketch/style metadata and prevent saving until complete? | US-13–15 | |
+| Q-09 | Should generation offer cancellation, cost guidance, and automatic continuation after key setup? | US-01–03, US-13 | |
+| Q-10 | Is a downloadable project format needed, or should the inactive Save Project/Redo controls be removed? | US-08, US-17 | |
+| Q-11 | Which devices, browsers, zoom levels, and keyboard/accessibility requirements must the next prototype support? | All | |
+| Q-12 | Should model-load failures expose retry, and should gesture messages confirm action completion rather than recognition? | US-04, US-11, US-13, US-15 | |
+
+## Known boundaries to carry into refinement
+
+- Gallery saving is gesture-only; result-overlay focus management and accessible naming need deliberate requirements.
+- Camera/model, microphone, key validation, and generation are separate failure paths. Existing feedback coverage differs between them.
+- Gesture feedback can announce an action even when the callback does nothing; it is not proof of success.
+- Standard sketch export uses JPEG, undo emits PNG, and the service declares PNG for either input. Resolve this mismatch separately from intended user behavior.
+- Mobile layout, reduced motion, full keyboard operation, gesture reliability, and actual generated output require runtime verification.
+- No account system, project persistence, collaboration, project export/import, or pointer drawing is implemented.
+
+## How to refine this draft
+
+For each story, mark **Keep**, **Change**, or **Remove**, then revise its user benefit and acceptance criteria. Answer the questions that affect your chosen scope and assign priorities such as Must/Should/Later. Proposed requirements become implementation scope only after your review. The next UI prototype should trace its screens and actions back to these story IDs.
