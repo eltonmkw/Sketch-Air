@@ -28,6 +28,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   // States
   const [isModelLoaded, setIsModelLoaded] = useState(false);
   const [cameraAllowed, setCameraAllowed] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isDrawingEnabled, setIsDrawingEnabled] = useState(true); // Default to enabled
   const [handLandmarker, setHandLandmarker] = useState<HandLandmarker | null>(null);
@@ -154,88 +155,69 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
   // Initialize/Toggle Camera
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let cancelled = false;
+    let warmupTimer: ReturnType<typeof setTimeout> | undefined;
+    const video = videoRef.current;
 
-    const toggleCamera = async () => {
-      // START CAMERA
-      if (isCameraActive && isModelLoaded) {
-        if (!videoRef.current) return;
-        
-        try {
-          // Request AUDIO here as well to prompt for permissions early!
-          // We won't use the audio track for anything, but it ensures SpeechRecognition
-          // has an easier time later.
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: 640, height: 480, facingMode: "user" },
-            audio: true 
-          });
-          
-          if (videoRef.current) {
-            // Only attach the video track to the video element to avoid feedback loop
-            const videoTrack = stream.getVideoTracks()[0];
-            const videoStream = new MediaStream([videoTrack]);
-            videoRef.current.srcObject = videoStream;
-            
-            videoRef.current.onloadeddata = () => {
-              setCameraAllowed(true);
-              setIsDrawingEnabled(true);
-              // Start Warmup period
-              setIsWarmup(true);
-              setTimeout(() => setIsWarmup(false), 2000); // 2 second warmup
-            };
-          }
-        } catch (err) {
-          console.error("Camera error:", err);
-          // Fallback: Try video only if audio failed (e.g. user denied mic)
-          try {
-             stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: 640, height: 480, facingMode: "user" }
-             });
-             if (videoRef.current) {
-                 videoRef.current.srcObject = stream;
-                 videoRef.current.onloadeddata = () => {
-                    setCameraAllowed(true);
-                    setIsDrawingEnabled(true);
-                    setIsWarmup(true);
-                    setTimeout(() => setIsWarmup(false), 2000); 
-                  };
-             }
-          } catch (e) {
-             console.error("Camera fallback error:", e);
-             setIsCameraActive(false); 
-          }
-        }
-      } 
-      // STOP CAMERA
-      else {
-        setCameraAllowed(false);
+    const startCamera = async () => {
+      setCameraAllowed(false);
+      if (!isCameraActive || !isModelLoaded) {
         setGestureState('none');
         isDrawingActiveRef.current = false;
         lastPointRef.current = null;
         smoothedPointRef.current = null;
         pinchConsistencyRef.current = 0;
-        historyRef.current = []; // Clear history on stop
+        historyRef.current = [];
         setIsWarmup(true);
-        
-        // Auto-clear canvas on stop
         clearInternalCanvas();
+        return;
+      }
 
-        if (videoRef.current && videoRef.current.srcObject) {
-          const currentStream = videoRef.current.srcObject as MediaStream;
-          currentStream.getTracks().forEach(track => track.stop());
-          videoRef.current.srcObject = null;
+      setCameraError(null);
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('Camera access requires localhost or HTTPS and a supported browser.');
         }
-        // Also stop the original stream if it exists (for audio tracks)
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
+        // Speech recognition requests its own microphone permission when needed.
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, facingMode: "user" },
+          audio: false
+        });
+        if (cancelled || !video) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
         }
+        video.srcObject = stream;
+        await video.play();
+        if (cancelled) return;
+        setCameraAllowed(true);
+        setIsDrawingEnabled(true);
+        setIsWarmup(true);
+        warmupTimer = setTimeout(() => setIsWarmup(false), 2000);
+      } catch (error) {
+        stream?.getTracks().forEach(track => track.stop());
+        if (cancelled) return;
+        const name = error instanceof Error ? error.name : '';
+        const message = name === 'NotAllowedError'
+          ? 'Camera access was denied. Allow camera access in your browser’s site settings, then try Start again.'
+          : name === 'NotFoundError'
+          ? 'No camera was found. Connect a webcam, then try Start again.'
+          : name === 'NotReadableError'
+          ? 'The camera is unavailable. Close other apps using it, then try Start again.'
+          : error instanceof Error ? error.message : 'Unable to start the camera. Check camera permissions and try again.';
+        setCameraError(message);
+        setIsCameraActive(false);
       }
     };
 
-    toggleCamera();
-
+    void startCamera();
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      cancelled = true;
+      clearTimeout(warmupTimer);
+      stream?.getTracks().forEach(track => track.stop());
+      if (video) {
+        video.pause();
+        video.srcObject = null;
       }
     };
   }, [isCameraActive, isModelLoaded]);
@@ -675,7 +657,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       )}
 
       {/* Start / Loading Screen */}
-      {(!isCameraActive || !isModelLoaded) && (
+      {(!cameraAllowed || !isModelLoaded) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#f0f0f0] z-20 text-gray-700">
           {!isModelLoaded ? (
              <div className="flex flex-col items-center p-6 border border-gray-300 bg-white shadow-sm">
@@ -691,12 +673,15 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
                 <p className="text-xs text-gray-500">
                     To start drawing in the air, please allow camera access.
                 </p>
+                {cameraError && <p role="alert" className="text-xs text-red-700">{cameraError}</p>}
+                {isCameraActive && <p role="status" className="text-xs">Starting camera… Allow camera access if prompted.</p>}
                 <button 
-                  onClick={() => setIsCameraActive(true)}
+                  type="button"
+                  onClick={() => setIsCameraActive(active => !active)}
                   className="bg-gray-100 hover:bg-blue-100 border border-gray-300 text-gray-800 px-6 py-1 text-sm rounded-sm mx-auto flex items-center gap-2 active:translate-y-px"
                 >
-                   <Play className="w-3 h-3 fill-current" />
-                   Start
+                   {isCameraActive ? <Power className="w-3 h-3" /> : <Play className="w-3 h-3 fill-current" />}
+                   {isCameraActive ? "Cancel" : "Start"}
                 </button>
              </div>
           )}
@@ -704,7 +689,7 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
       )}
 
       {/* Control Overlay - Hide if result is visible to reduce clutter */}
-      {isCameraActive && !isResultVisible && (
+      {cameraAllowed && !isResultVisible && (
         <>
           <div className="absolute top-2 left-2 z-20 flex flex-col gap-1">
               <div className="bg-white/90 border border-gray-400 text-[10px] px-2 py-1 shadow-sm text-black rounded-sm backdrop-blur-sm">
