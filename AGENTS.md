@@ -49,7 +49,7 @@ Use the existing npm lockfile. Install dependencies only if needed and permitted
 
 - `npm run dev`: Vite development server on port 3000.
 - `npm run build`: production bundle.
-- `npx tsc --noEmit`: TypeScript checking with the existing configuration.
+- `npm run typecheck`: TypeScript checking with the existing configuration.
 - `npm run preview`: inspect a production build locally.
 
 There are no configured test or lint scripts in [package.json](./package.json). For code changes, run build and TypeScript checks when dependencies are available; report failures accurately, including pre-existing ones. Documentation-only changes need content, source-reference, and link checks rather than a new test suite.
@@ -57,6 +57,32 @@ There are no configured test or lint scripts in [package.json](./package.json). 
 For relevant interaction changes, verify in a browser: camera start/stop and permission failure, drawing and undo, gesture conflicts, voice availability, key-dialog controls, loading/error feedback, result style switching, gallery save/download/delete, and gallery visibility. Limit checks to affected behavior. Use HTTPS or localhost for webcam access. External CDN resources and Google require internet access.
 
 Do not use a real API key or trigger billable generation solely for verification without user authorization. Use mocks for generation states when appropriate, and state that the response was mocked. Distinguish build/type checks, browser inspection, real webcam/microphone testing, and live API generation in the final report. Never claim checks that were not performed.
+
+## GitHub and Vercel workflow
+
+Use trunk-based development: create short-lived branches from the latest `main`, open a PR targeting `main`, and keep changes small and reviewable. Do not recreate a long-lived `development` branch to match Vercel's Development environment. Approval and merging are separate actions; creating a PR does not authorize merging or releasing it.
+
+The intended Vercel project is `sketch-air` in `eltonmkws-projects`, connected to `eltonmkw/Sketch-Air`. The public production URL is https://play-sketch-air.vercel.app. Verify the actual repository connection and Production Branch setting before relying on automatic deployments; the intended production branch is `main`. Prefer the native Vercel Git integration over adding a second deployment pipeline.
+
+### Environment boundaries
+
+- Development is for local execution, Preview is for branch/PR deployments, and Production is for releases from `main`. These environment names do not require matching Git branch names.
+- Set environment variables only when the implementation reads them. This app currently accepts a user-provided Gemini key in the browser; do not introduce a shared Gemini key through Vercel variables or embed credentials in a Vite bundle. Browser-exposed variables are public, not a secret store.
+- If external services are introduced, keep Preview data and sandbox credentials separate from Production. Check authentication callback URLs and service restrictions for preview origins. Variable changes require a new deployment to take effect.
+- Use existing authorized access for protected previews. Do not disable deployment protection or expose temporary access links, credentials, or browser authentication state in PRs or test artifacts.
+
+### Before merging: Preview verification
+
+1. Run the applicable local checks and inspect the GitHub `Build and typecheck` CI result for the latest PR commit. Documentation-only changes still receive normal CI; validate their content and links locally.
+2. Locate the PR's Vercel Preview deployment. Record its URL, branch, commit SHA, and deployment status. Confirm the SHA matches the current PR head; an older Ready deployment is not evidence for the current change. If no matching preview exists, report that gap rather than testing Production as a substitute.
+3. For app changes, open the preview in a browser and exercise the affected flows using the interaction checklist above. Check browser errors and failed requests, and inspect layout at relevant viewport sizes. HTTP 200 and a downloadable bundle alone do not verify that React renders or that interactions work.
+4. Report passed, failed, and untested checks separately. Identify mocks and limitations such as missing camera/microphone hardware, credentials, or network access. Keep real media and billable API verification subject to the existing authorization rules.
+
+### After merging: Production verification
+
+Confirm the production deployment comes from the merged `main` commit (which can differ from the PR head after squash or merge), reaches Ready, and serves the intended production domain. Run a focused smoke test of the changed behavior and the main app flow. A Ready build alone is not a production smoke test. Report failures with the deployment URL and commit; treat promotion, rollback, and production configuration changes as release actions requiring task authorization.
+
+For documentation-only PRs, verify the diff, references, CI, and deployment metadata when available; no feature behavior changes are expected. Record unavailable deployment evidence without claiming an interactive test or blocking documentation review on unrelated hardware checks.
 
 ## Scope and handoff
 
