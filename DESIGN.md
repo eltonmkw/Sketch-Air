@@ -85,7 +85,7 @@ These states describe observed behavior, including incomplete failure feedback.
 | State / trigger | Visible response and behavior |
 | --- | --- |
 | Tracking model loading | “Loading components...” and a blue spinner. Model-load failures only log to the console; the loading screen can remain. |
-| Camera inactive | “Enable Webcam” card with Start. Start requests video only and shows progress until playback begins. Failures display an accessible message with recovery guidance and allow retry. Pending requests are cancelled on stop or unmount; late streams are released. |
+| Camera inactive | “Enable Webcam” card with Start. Start requests video only and shows progress with an enabled Cancel button until playback begins. Cancel resets the attempt so Start is available again. Failures display an accessible message with recovery guidance and allow retry. Pending requests are cancelled on stop or unmount; late streams are released. |
 | Camera active | Mirrored video, ink, tracking cursor, gesture legend, Drawing ON/OFF and Stop controls. A two-second warmup prevents drawing/action triggers. Stop clears ink and undo history. |
 | Drawing disabled | Red “Drawing: OFF” control; drawing stops while tracking continues. |
 | Voice listening | Red pulsing microphone; recognized text appends to the description. The button is omitted without browser speech recognition support. |

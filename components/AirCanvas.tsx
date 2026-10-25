@@ -676,12 +676,12 @@ const AirCanvas = forwardRef<AirCanvasHandle, AirCanvasProps>(({ onCanvasUpdate,
                 {cameraError && <p role="alert" className="text-xs text-red-700">{cameraError}</p>}
                 {isCameraActive && <p role="status" className="text-xs">Starting camera… Allow camera access if prompted.</p>}
                 <button 
-                  disabled={isCameraActive}
-                  onClick={() => setIsCameraActive(true)}
+                  type="button"
+                  onClick={() => setIsCameraActive(active => !active)}
                   className="bg-gray-100 hover:bg-blue-100 border border-gray-300 text-gray-800 px-6 py-1 text-sm rounded-sm mx-auto flex items-center gap-2 active:translate-y-px"
                 >
-                   <Play className="w-3 h-3 fill-current" />
-                   {isCameraActive ? "Starting…" : "Start"}
+                   {isCameraActive ? <Power className="w-3 h-3" /> : <Play className="w-3 h-3 fill-current" />}
+                   {isCameraActive ? "Cancel" : "Start"}
                 </button>
              </div>
           )}
