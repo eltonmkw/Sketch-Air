@@ -36,6 +36,7 @@ Sketch Air uses React 19, TypeScript, Vite 6, Lucide icons, Google GenAI, and Me
 - Preserve the dialog's storage, Google-request, and billing disclosures. Do not equate a successful connection test with guaranteed image generation.
 - Keep the API key field accessible by name even though its visible label is omitted.
 - Test Connection validates keys; success shows an accented Done button. Only Done activates the validated key and dismisses the modal. Show accessible field validation immediately on failure, clear it when editing or retrying, and prevent duplicate submissions. Keep Use key and Continue without key removed; preserve the accessible top-right X button and Escape for drawing without a key.
+- Start requests camera access only. Keep startup progress visible until video playback succeeds, show accessible recovery guidance on failure, and release streams that arrive after cancellation.
 - Keep browser media and recognition resources cleaned up when their lifecycle ends. Preserve alignment between mirrored video, ink, cursor, and exported sketch when editing canvas code.
 - Keep submitted `resultPrompt` separate from the editable prompt. Retain the sketch after generation and use the submitted description for result-style changes and gallery metadata.
 - Keep tracking available for save gestures while a result is visible, while preventing drawing beneath that result.
