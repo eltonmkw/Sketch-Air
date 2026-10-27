@@ -26,3 +26,8 @@ dist-ssr
 # Local credentials
 .env
 .env.*
+
+# Browser test output can contain local state; never commit it.
+test-results/
+playwright-report/
+playwright.local.config.ts

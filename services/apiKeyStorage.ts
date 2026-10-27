@@ -15,19 +15,32 @@ export function readApiKey(): string {
   return '';
 }
 
-export function clearApiKey(): void {
+// A removal attempt is not a confirmation: blocked storage can throw or ignore it.
+export function clearApiKey(): boolean {
+  let cleared = true;
   for (const storage of ['localStorage', 'sessionStorage'] as const) {
-    try { window[storage].removeItem(STORAGE_KEY); } catch { /* Storage may be blocked. */ }
+    try {
+      window[storage].removeItem(STORAGE_KEY);
+      if (window[storage].getItem(STORAGE_KEY) !== null) cleared = false;
+    } catch {
+      cleared = false;
+    }
   }
+  return cleared;
 }
 
-export function storeApiKey(key: string, remember: boolean): boolean {
-  clearApiKey();
-  if (!remember || !key.trim()) return true;
+export type KeyStorageResult = 'memory' | 'remembered' | 'write-failed' | 'removal-failed';
+
+export function storeApiKey(key: string, remember: boolean): KeyStorageResult {
+  if (!clearApiKey()) return 'removal-failed';
+  if (!remember || !key.trim()) return 'memory';
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({key: key.trim(), expiresAt: Date.now() + KEY_LIFETIME_MS}));
-    return true;
+    const record = JSON.stringify({key: key.trim(), expiresAt: Date.now() + KEY_LIFETIME_MS});
+    localStorage.setItem(STORAGE_KEY, record);
+    if (localStorage.getItem(STORAGE_KEY) === record) return 'remembered';
   } catch {
-    return false;
+    // A write/read failure can occur after a record was stored. Confirm cleanup
+    // before promising that the key is only in memory.
   }
+  return clearApiKey() ? 'write-failed' : 'removal-failed';
 }

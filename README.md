@@ -33,6 +33,43 @@
 
 <hr>
 
+## API-key verification without Google access
+
+Run `npm run dev:testing` (or `TESTING=true npm run dev`) locally and enter
+the **dummy value** `sketch-air-test-key`. Test Connection succeeds without
+contacting Google, then Done activates the dummy key. Other values are rejected.
+Image generation is disabled in this mode, so verification cannot incur Google
+charges. A TESTING notice identifies the mocked environment. Do not enter real
+credentials in testing mode.
+
+`TESTING` is a Node environment flag for the local development server. It must
+equal `true`; `NODE_ENV=test` alone does not enable it. Production mode, preview,
+and every build use the real Gemini service, even with `TESTING=true` or
+`--mode test`. Never enable test flags in a shared deployment.
+
+Keys are kept in memory unless Remember on this device is selected before Done.
+Remembered keys are plaintext browser data with a 30-day expiry checked on load;
+browser storage is not a secure vault. Removal clears the active key and attempts
+to delete browser data. If deletion cannot be confirmed, the dialog warns that a
+saved key may return after refresh and tells you to clear this site's browser
+data. Removal does not revoke a key at Google.
+
+Verification commands:
+
+```sh
+npm ci
+npm test
+npx playwright install chromium
+npm run test:browser
+npm run typecheck
+npm run build
+```
+
+Browser tests cover memory-only refresh, opt-in persistence after Done, removal,
+blocked-storage feedback, and production-build rejection of the dummy key. They
+mock Google responses and block external CDN resources; they do not verify live
+Gemini access, billing, camera, or microphone behavior.
+
 <p align="center">
   Built with <span style="color: #e25555;">❤️</span> for <b>AI Hackathon</b>
 </p>
