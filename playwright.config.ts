@@ -1,12 +1,24 @@
 import { defineConfig } from '@playwright/test';
 
+const remoteURL = process.env.PLAYWRIGHT_BASE_URL;
+if (remoteURL && (new URL(remoteURL).protocol !== 'https:'
+  || new URL(remoteURL).origin !== remoteURL)) {
+  throw new Error('PLAYWRIGHT_BASE_URL must be an HTTPS origin without a trailing slash');
+}
+
 export default defineConfig({
   testDir: './tests/browser',
   fullyParallel: true,
   workers: process.env.CI ? 2 : undefined,
   retries: 0,
-  use: { baseURL: 'http://127.0.0.1:4173', trace: 'retain-on-failure' },
-  webServer: [
+  use: {
+    baseURL: remoteURL ?? 'http://127.0.0.1:4173',
+    // Remote requests may carry an automation bypass credential.
+    trace: remoteURL ? 'off' : 'retain-on-failure',
+    screenshot: 'off',
+    video: 'off',
+  },
+  webServer: remoteURL ? undefined : [
     {
       command: 'npm run dev -- --mode test --host 127.0.0.1 --port 4173 --strictPort',
       env: { ENV: 'TESTING', NODE_ENV: 'test', VERCEL_ENV: '', VERCEL_TARGET_ENV: '' },

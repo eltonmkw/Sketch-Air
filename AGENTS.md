@@ -81,6 +81,11 @@ Do not use a real API key or trigger billable generation solely for verification
 
 ## GitHub and Vercel workflow
 
+See [the deployment guide](./docs/DEPLOYMENT.md) for setup commands, Preview
+testing, verified settings, and the remaining dashboard checklist. The `ENV`
+selector maps `DEVELOPMENT` to local use, `TESTING` to Preview QA, and
+`PRODUCTION` to live use; these are independent of Vercel's built-in scope names.
+
 Use trunk-based development: create short-lived branches from the latest `main`, open a PR targeting `main`, and keep changes small and reviewable. Do not recreate a long-lived `development` branch to match Vercel's Development environment. Approval and merging are separate actions; creating a PR does not authorize merging or releasing it.
 
 The intended Vercel project is `sketch-air` in `eltonmkws-projects`, connected to `eltonmkw/Sketch-Air`. The public production URL is https://play-sketch-air.vercel.app. Verify the actual repository connection and Production Branch setting before relying on automatic deployments; the intended production branch is `main`. Prefer the native Vercel Git integration over adding a second deployment pipeline.

@@ -1,8 +1,11 @@
 import path from 'path';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ command, mode, isPreview }) => {
+    // Vite does not load .env files before evaluating its config. Read only
+    // this selector; never expose a credentials object through define/envPrefix.
+    const environment = process.env.ENV ?? loadEnv(mode, process.cwd(), 'ENV').ENV;
     // ENV is build-time configuration. Vercel Production always vetoes mocks.
     const production = process.env.VERCEL_ENV === 'production'
       || process.env.VERCEL_TARGET_ENV === 'production';
@@ -10,7 +13,7 @@ export default defineConfig(({ command, mode, isPreview }) => {
     const local = !process.env.VERCEL_ENV && !process.env.VERCEL_TARGET_ENV
       && command === 'serve' && !isPreview && mode !== 'production'
       && process.env.NODE_ENV !== 'production';
-    const testing = process.env.ENV === 'TESTING' && !production && (preview || local);
+    const testing = environment === 'TESTING' && !production && (preview || local);
     return {
       server: {
         port: 3000,

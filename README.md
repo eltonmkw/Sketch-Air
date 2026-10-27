@@ -17,7 +17,7 @@
   <li>
     <b>Install dependencies</b>
     <br>
-    <pre><code>npm install</code></pre>
+    <pre><code>npm ci</code></pre>
   </li>
   <li>
     <b>Start the app</b>
@@ -33,6 +33,15 @@
 
 <hr>
 
+## Development → Preview → Production
+
+Use Node 24.x. See the [deployment guide](./docs/DEPLOYMENT.md) for local setup,
+Preview tests, service isolation, and the Vercel/Git settings checklist.
+The application selector is `ENV=DEVELOPMENT` locally, `ENV=TESTING` for Preview
+QA, and `ENV=PRODUCTION` for live use. Vercel's scopes remain Development,
+Preview, and Production. Copy `.env.example` to `.env.local` and replace its
+placeholder with `DEVELOPMENT`; never add a shared Gemini key to environment files.
+
 ## API-key verification without Google access
 
 Run `npm run dev:testing` (or `ENV=TESTING npm run dev`) locally and enter
@@ -44,7 +53,7 @@ credentials in testing mode.
 
 `ENV` is a case-sensitive build-time selector. `ENV=TESTING` enables the offline
 mock in local development and Vercel Preview builds (`VERCEL_ENV=preview`).
-`ENV=PRODUCTION`, unset, and unrecognized values keep real validation. Vercel
+`ENV=DEVELOPMENT`, `ENV=PRODUCTION`, unset, and unrecognized values keep real validation. Vercel
 Production always uses real validation, even if `ENV=TESTING` is accidentally set.
 Ordinary local builds also keep real validation unless explicitly simulating Vercel Preview.
 

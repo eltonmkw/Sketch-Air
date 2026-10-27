@@ -26,6 +26,8 @@ dist-ssr
 # Local credentials
 .env
 .env.*
+!.env.example
+.vercel/
 
 # Browser test output can contain local state; never commit it.
 test-results/
