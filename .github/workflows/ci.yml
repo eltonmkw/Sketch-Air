@@ -32,5 +32,11 @@ jobs:
         run: npm ci
       - name: Check TypeScript
         run: npm run typecheck
+      - name: Test API-key storage and test-mode isolation
+        run: npm test
       - name: Build production bundle
         run: npm run build
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Test API-key dialog in browser
+        run: npm run test:browser

@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:testing": "ENV=TESTING vite --mode test --host 127.0.0.1",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@google/genai": "^1.31.0",
@@ -17,6 +20,7 @@
   },
   "devDependencies": {
     "@mediapipe/tasks-vision": "0.10.0",
+    "@playwright/test": "1.56.1",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",

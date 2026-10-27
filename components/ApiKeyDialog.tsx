@@ -81,12 +81,18 @@ export default function ApiKeyDialog({ open, hasKey, savedKey, onSave, onClose }
       void handleTest();
       return;
     }
+    if (storageFallback) {
+      onClose();
+      return;
+    }
     const value = key.trim() || savedKey;
     const stored = storeApiKey(value, remember);
     onSave(value);
-    if (!stored && !storageFallback) {
+    if (stored === 'write-failed' || stored === 'removal-failed') {
       setStorageFallback(true);
-      setNotice('Browser storage is blocked. Your key works until refresh. Click Done to continue.');
+      setNotice(stored === 'removal-failed'
+        ? 'Your active key is in memory, but previously saved key data could not be cleared. A previously saved key may return after refresh. Clear this site’s browser data to remove it. Click Done to continue.'
+        : 'Browser storage is blocked. Your key works until refresh. Click Done to continue.');
       return;
     }
     onClose();
@@ -131,7 +137,11 @@ export default function ApiKeyDialog({ open, hasKey, savedKey, onSave, onClose }
         </div>
         {testResult && <p role="status" style={{ fontSize: 13, marginBottom: 12 }}>{testResult}</p>}
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="checkbox" disabled={testing} checked={remember} onChange={event => setRemember(event.target.checked)} />
+          <input type="checkbox" disabled={testing} checked={remember} onChange={event => {
+            setRemember(event.target.checked);
+            setStorageFallback(false);
+            setNotice('');
+          }} />
           Remember on this device
         </label>
         <p style={{ fontSize: 13, margin: '12px 0' }}>By selecting 'Remember on this device', you save your key in this browser for 30 days or until removed. Otherwise, it clears on refresh. Browser storage isn’t a secure vault.</p>
@@ -140,7 +150,7 @@ export default function ApiKeyDialog({ open, hasKey, savedKey, onSave, onClose }
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           {hasKey && savedKey.trim() && <button type="button" onClick={() => {
       
-            clearApiKey();
+            const cleared = clearApiKey();
             onSave('');
             setKey('');
             setKeyError('');
@@ -148,7 +158,10 @@ export default function ApiKeyDialog({ open, hasKey, savedKey, onSave, onClose }
             setTesting(false);
             setTestResult('');
             setTestStatus('idle');
-            setNotice('API key removed. You can continue drawing.');
+            setStorageFallback(false);
+            setNotice(cleared
+              ? 'API key removed. You can continue drawing.'
+              : 'The active key was cleared, but we could not remove the saved browser data. A saved key may return after refresh. Clear this site’s browser data to remove it.');
           }}>Remove saved key</button>}
         </div>
       </form>
