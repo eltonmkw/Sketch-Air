@@ -1,7 +1,7 @@
-// Selected only by the local TESTING development server. Never by a build.
+// Selected only for explicit local testing or a Vercel Preview testing build.
 export async function testApiKey(apiKey: string): Promise<void> {
-  if (apiKey !== 'sketch-air-test-key') {
-    throw new Error('TESTING mode accepts only the dummy key: sketch-air-test-key. Do not enter a real key.');
+  if (apiKey !== 'TESTING') {
+    throw new Error('TESTING mode accepts only the dummy key: TESTING. Do not enter a real key.');
   }
 }
 

@@ -31,3 +31,6 @@ dist-ssr
 test-results/
 playwright-report/
 playwright.local.config.ts
+
+# Isolated Preview-mode test build
+dist-preview/

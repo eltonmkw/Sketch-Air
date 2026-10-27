@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const storageKey = 'sketch-air.gemini-api-key';
-const dummy = 'sketch-air-test-key';
+const dummy = 'TESTING';
 
 async function activate(page: Page, remember = false) {
   await page.getByLabel('Gemini API key', { exact: true }).fill(dummy);
@@ -146,4 +146,19 @@ test('production build rejects the dummy key even with ENV=TESTING and mode=test
   await expect(page.getByRole('alert')).toContainText('Google rejected this key');
   await expect(page.getByRole('button', { name: 'Done', exact: true })).not.toBeVisible();
   expect(requests).toBeGreaterThan(0);
+});
+
+
+test('Preview build accepts TESTING, persists after Done, and removes it', async ({ page }) => {
+  await page.goto('http://127.0.0.1:4175');
+  await expect(page.getByRole('note')).toContainText('TESTING');
+  await activate(page, true);
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await page.getByRole('button', { name: 'API key' }).click();
+  await page.getByRole('button', { name: 'Remove saved key' }).click();
+  expect(await page.evaluate(key => localStorage.getItem(key), storageKey)).toBeNull();
+  await page.reload();
+  await expect(page.getByRole('dialog')).toBeVisible();
 });

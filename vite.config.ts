@@ -3,10 +3,14 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ command, mode, isPreview }) => {
-    // ENV is read by Node, never exposed as a browser-controlled bypass.
-    // Builds always resolve the real service, even with ENV=TESTING or --mode test.
-    const testing = command === 'serve' && !isPreview && mode !== 'production'
-      && process.env.NODE_ENV !== 'production' && process.env.ENV === 'TESTING';
+    // ENV is build-time configuration. Vercel Production always vetoes mocks.
+    const production = process.env.VERCEL_ENV === 'production'
+      || process.env.VERCEL_TARGET_ENV === 'production';
+    const preview = process.env.VERCEL_ENV === 'preview';
+    const local = !process.env.VERCEL_ENV && !process.env.VERCEL_TARGET_ENV
+      && command === 'serve' && !isPreview && mode !== 'production'
+      && process.env.NODE_ENV !== 'production';
+    const testing = process.env.ENV === 'TESTING' && !production && (preview || local);
     return {
       server: {
         port: 3000,

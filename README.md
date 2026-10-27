@@ -36,17 +36,30 @@
 ## API-key verification without Google access
 
 Run `npm run dev:testing` (or `ENV=TESTING npm run dev`) locally and enter
-the **dummy value** `sketch-air-test-key`. Test Connection succeeds without
+the **dummy value** `TESTING`. Test Connection succeeds without
 contacting Google, then Done activates the dummy key. Other values are rejected.
 Image generation is disabled in this mode, so verification cannot incur Google
 charges. A TESTING notice identifies the mocked environment. Do not enter real
 credentials in testing mode.
 
-`ENV` is a Node environment selector for the local development server. It must
-equal `TESTING` to enable mocks. `ENV=PRODUCTION`, an unset or unrecognized value,
-and `NODE_ENV=test` alone keep real validation. Production mode, preview,
-and every build use the real Gemini service, even with `ENV=TESTING` or
-`--mode test`. Never enable test flags in a shared deployment.
+`ENV` is a case-sensitive build-time selector. `ENV=TESTING` enables the offline
+mock in local development and Vercel Preview builds (`VERCEL_ENV=preview`).
+`ENV=PRODUCTION`, unset, and unrecognized values keep real validation. Vercel
+Production always uses real validation, even if `ENV=TESTING` is accidentally set.
+Ordinary local builds also keep real validation unless explicitly simulating Vercel Preview.
+
+### Enable testing on Vercel Preview
+
+1. Open **sketch-air → Settings → Environment Variables** in Vercel.
+2. Add `ENV` with value `TESTING`, selecting **Preview only**. No `VITE_` prefix is needed.
+3. Redeploy the Preview after saving; environment changes do not alter existing builds.
+4. Open the new Preview, enter `TESTING` as the API key, click **Test Connection**, then **Done**.
+
+The TESTING notice identifies the mock. Test Connection makes no Google request,
+and generation stays disabled. For normal Preview validation, change Preview's
+`ENV` to `PRODUCTION` and redeploy. Production may explicitly use `ENV=PRODUCTION`;
+its deployment target also prevents the mock from being bundled. Release through
+a fresh production build rather than copying testing build files.
 
 Keys are kept in memory unless Remember on this device is selected before Done.
 Remembered keys are plaintext browser data with a 30-day expiry checked on load;
