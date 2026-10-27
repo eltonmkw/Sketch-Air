@@ -135,7 +135,7 @@ test('memory fallback warns when an older remembered key could not be removed', 
   await expect(page.getByRole('dialog')).not.toBeVisible();
 });
 
-test('production build rejects the dummy key even with TESTING=true and mode=test', async ({ page }) => {
+test('production build rejects the dummy key even with ENV=TESTING and mode=test', async ({ page }) => {
   let requests = 0;
   page.on('request', request => {
     if (request.url().includes('generativelanguage.googleapis.com')) requests++;

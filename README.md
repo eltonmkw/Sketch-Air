@@ -35,16 +35,17 @@
 
 ## API-key verification without Google access
 
-Run `npm run dev:testing` (or `TESTING=true npm run dev`) locally and enter
+Run `npm run dev:testing` (or `ENV=TESTING npm run dev`) locally and enter
 the **dummy value** `sketch-air-test-key`. Test Connection succeeds without
 contacting Google, then Done activates the dummy key. Other values are rejected.
 Image generation is disabled in this mode, so verification cannot incur Google
 charges. A TESTING notice identifies the mocked environment. Do not enter real
 credentials in testing mode.
 
-`TESTING` is a Node environment flag for the local development server. It must
-equal `true`; `NODE_ENV=test` alone does not enable it. Production mode, preview,
-and every build use the real Gemini service, even with `TESTING=true` or
+`ENV` is a Node environment selector for the local development server. It must
+equal `TESTING` to enable mocks. `ENV=PRODUCTION`, an unset or unrecognized value,
+and `NODE_ENV=test` alone keep real validation. Production mode, preview,
+and every build use the real Gemini service, even with `ENV=TESTING` or
 `--mode test`. Never enable test flags in a shared deployment.
 
 Keys are kept in memory unless Remember on this device is selected before Done.
