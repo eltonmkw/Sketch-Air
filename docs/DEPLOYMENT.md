@@ -133,9 +133,33 @@ npm run preview -- --host 127.0.0.1
 
 There is no lint script. Existing GitHub Actions workflow `.github/workflows/ci.yml`
 runs the checks above on non-draft PRs into `main` and pushes to `main`. It uses
-the npm lockfile, Node 24, and the job name **Build and typecheck**. Vercel's Git
+the npm lockfile, Node 24, and the job name **Build and typecheck**. The job runs
+inside `mcr.microsoft.com/playwright:v1.56.1-noble`, which includes browsers and
+their OS dependencies, so CI does not run `playwright install` or apt. The npm
+Playwright package still comes from `npm ci`. Keep the image tag matched to the
+exact `@playwright/test` version in both package files when upgrading. Node 24
+is selected by `actions/setup-node` inside the container. Pulling the image still
+takes time on a fresh runner; this removes the separate browser/OS installation
+step, rather than guaranteeing a particular overall runtime. Vercel's Git
 integration owns deployment; CI does not need a Vercel deployment token or a
 second deployment workflow.
+
+To run the same browser image locally with Docker (POSIX shell):
+
+```sh
+docker run --rm --init --ipc=host \
+  --mount "type=bind,src=$(pwd),dst=/app,readonly" \
+  --tmpfs /work:exec --workdir /work --env CI=true \
+  mcr.microsoft.com/playwright:v1.56.1-noble \
+  bash -lc 'tar -C /app --exclude=.git --exclude=node_modules --exclude=".env*" --exclude=.vercel --exclude=dist --exclude=dist-preview --exclude=test-results --exclude=playwright-report -cf - . | tar -xf - && npm ci && npm run test:browser'
+```
+
+This copies source into temporary container storage, excluding credentials and
+host dependencies, and leaves the checkout untouched. No output artifacts are
+retained. It uses the image's bundled Node; GitHub CI separately selects Node 24
+and also runs typechecking, unit tests, and the build. No custom Dockerfile is
+needed. Managed environments may additionally require their documented proxy and
+CA mounts; never disable TLS verification to make dependency installation work.
 
 ### Preparation results (2026-10-27)
 

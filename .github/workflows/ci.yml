@@ -19,6 +19,10 @@ jobs:
     name: Build and typecheck
     if: github.event_name == 'push' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    container:
+      # Keep this version matched to @playwright/test in package.json/lockfile.
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --init --ipc=host
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -36,7 +40,5 @@ jobs:
         run: npm test
       - name: Build production bundle
         run: npm run build
-      - name: Install test browser
-        run: npx playwright install --with-deps chromium
       - name: Test API-key dialog in browser
         run: npm run test:browser
