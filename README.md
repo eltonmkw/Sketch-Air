@@ -10,7 +10,7 @@ Draw in mid-air with your hand and webcam. Turn your sketch into AI artwork.
 
 **[Launch Sketch Air](https://play-sketch-air.vercel.app)** — no installation needed.
 
-Bring a desktop browser, webcam, and internet connection. Drawing needs no API key.
+Bring a desktop browser, webcam, and internet connection. Sketch freely; connect your Gemini key to generate AI artwork from your air sketch.
 
 ## Create your first artwork
 
