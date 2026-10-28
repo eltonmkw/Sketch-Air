@@ -11,11 +11,22 @@ async function activate(page: Page, remember = false) {
   await page.getByRole('button', { name: 'Done', exact: true }).click();
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, baseURL }) => {
+  const remote = Boolean(process.env.PLAYWRIGHT_BASE_URL);
+  const origin = new URL(baseURL!).origin;
+  const bypass = remote ? process.env.VERCEL_AUTOMATION_BYPASS_SECRET : undefined;
   // Only key-dialog behavior is in scope; do not fetch CDN tracking models or Google.
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
-    if (url.hostname === '127.0.0.1') return route.continue();
+    if (url.origin === origin || (!remote && url.hostname === '127.0.0.1')) {
+      if (!bypass) return route.continue();
+      // Fetch without following redirects so the secret cannot reach another origin.
+      const response = await route.fetch({
+        headers: { ...route.request().headers(), 'x-vercel-protection-bypass': bypass },
+        maxRedirects: 0,
+      });
+      return route.fulfill({ response });
+    }
     if (url.hostname === 'cdn.jsdelivr.net' && url.pathname.endsWith('/+esm')) {
       // The app imports MediaPipe at module load. Stub its network boundary so
       // the real App/dialog can mount without a model download or camera.
@@ -39,6 +50,10 @@ test.beforeEach(async ({ page }) => {
     }
     return route.abort();
   });
+  if (remote) {
+    await page.goto('/');
+    await expect(page.getByRole('note')).toContainText('TESTING');
+  }
 });
 
 test('dummy key stays memory-only until refresh and is never sent to Google in TESTING mode', async ({ page }) => {
@@ -118,7 +133,9 @@ test('blocked removal clears the active key but warns that browser data may rema
   await expect(page.getByText(/could not remove the saved browser data/)).toBeVisible();
   await expect(page.getByText('API key removed. You can continue drawing.', { exact: true })).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Remove saved key' })).not.toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('removal-warning.png') });
+  if (!process.env.PLAYWRIGHT_BASE_URL) {
+    await page.screenshot({ path: testInfo.outputPath('removal-warning.png') });
+  }
   await page.getByRole('button', { name: 'Close API key dialog' }).click();
   await expect(page.getByRole('button', { name: 'API key', exact: true })).toBeVisible();
 });
@@ -136,6 +153,7 @@ test('memory fallback warns when an older remembered key could not be removed', 
 });
 
 test('production build rejects the dummy key even with ENV=TESTING and mode=test', async ({ page }) => {
+  test.skip(Boolean(process.env.PLAYWRIGHT_BASE_URL), 'Local production isolation check; remote target is a TESTING Preview');
   let requests = 0;
   page.on('request', request => {
     if (request.url().includes('generativelanguage.googleapis.com')) requests++;
@@ -150,7 +168,7 @@ test('production build rejects the dummy key even with ENV=TESTING and mode=test
 
 
 test('Preview build accepts TESTING, persists after Done, and removes it', async ({ page }) => {
-  await page.goto('http://127.0.0.1:4175');
+  await page.goto(process.env.PLAYWRIGHT_BASE_URL ? '/' : 'http://127.0.0.1:4175');
   await expect(page.getByRole('note')).toContainText('TESTING');
   await activate(page, true);
   await expect(page.getByRole('dialog')).not.toBeVisible();
