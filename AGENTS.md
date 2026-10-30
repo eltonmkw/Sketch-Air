@@ -119,3 +119,7 @@ For documentation-only PRs, verify the diff, references, CI, and deployment meta
 ## Scope and handoff
 
 Keep edits focused, preserve unrelated work, and avoid silently implementing the known gaps listed in [DESIGN.md](./DESIGN.md). Summarize what changed, what was verified, and what remains unverified. If documentation and implementation disagree, inspect the source and resolve the discrepancy explicitly; do not invent behavior to satisfy the prose.
+
+## Additional Playwright guidance
+
+Read [Playwright skill](./.agents/skills/playwright-skill/SKILL.md) for browser test design. Its guides target newer Playwright releases; use only APIs supported by the installed 1.56.1. Repository rules take precedence, including zero retries and retaining failing assertions.

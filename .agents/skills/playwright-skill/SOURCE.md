@@ -1,0 +1,1 @@
+Vendored from https://github.com/testdino-hq/playwright-skill at Git tree 178d1cb537604279d7b54500c4823a6db42b9de6. MIT license retained. Files installed unchanged; SOURCE.md is local provenance. No upstream scripts were executed.

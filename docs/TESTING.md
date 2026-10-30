@@ -100,3 +100,9 @@ Use mocks for generation states when possible. Do not use a real API key or trig
 For documentation-only changes, check content against source, relative links, and the diff; a new test suite is unnecessary.
 
 [Back to README](../README.md)
+
+## Installed Playwright design guides
+
+The repository-local [TestDino Playwright skill](../.agents/skills/playwright-skill/SKILL.md) is vendored with its MIT license and immutable Git tree recorded in SOURCE.md. No global installation or dependency upgrade is required. It targets newer Playwright APIs; this repository remains on 1.56.1. Repository rules, including zero retries and preserving failing assertions, override upstream defaults.
+
+Provider networking and exposure audits live in `tests/browser/fixtures/provider.ts`; scenario steps stay in `api-key-provider.spec.ts`. The production origin is configured in `playwright.config.ts`, and the fixture derives its allowlist from the per-test baseURL. This keeps test infrastructure separate from scenarios without adding page-object wrappers around one dialog.
