@@ -30,6 +30,15 @@ export default function ApiKeyDialog({ open, hasKey, savedKey, onSave, onClose }
   }[testStatus];
   const testVersion = useRef(0);
 
+  useEffect(() => {
+    // Focus the key input only after React re-renders and re-enables it on a
+    // genuine validation failure. Running focus() synchronously in handleTest's
+    // catch block is a no-op because the input is still disabled in the DOM at
+    // that point (testing is cleared in finally, after this tick).
+    if (open && testStatus === 'error' && keyError && !testing) {
+      keyInput.current?.focus();
+    }
+  }, [open, testStatus, keyError, testing]);
 
   useEffect(() => {
     if (open) dialog.current?.showModal();
@@ -68,7 +77,6 @@ export default function ApiKeyDialog({ open, hasKey, savedKey, onSave, onClose }
         setTestStatus('error');
         setTestResult('');
         setKeyError((error as Error).message);
-        keyInput.current?.focus();
       }
     } finally {
       if (version === testVersion.current) setTesting(false);
