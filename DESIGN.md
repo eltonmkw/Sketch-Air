@@ -10,6 +10,8 @@ The visual language resembles a classic desktop painting application. Favor comp
 
 ## Design system
 
+For the expanded, standalone reference with exact class names, hex literals, component props/handles, and gesture thresholds cited to source, see [docs/DESIGN_SYSTEM.md](./docs/DESIGN_SYSTEM.md). The tables below remain the concise design-system overview.
+
 ### Tokens
 
 These are observed values, not a centralized token system. Styling currently uses Tailwind utilities in JSX, global CSS in [index.html](./index.html), and inline styles for the API key dialog.
