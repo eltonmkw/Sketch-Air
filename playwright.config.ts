@@ -8,6 +8,9 @@ if (remoteURL && (new URL(remoteURL).protocol !== 'https:'
 
 export default defineConfig({
   testDir: './tests/browser',
+  // These tests exercise the real service in a local production build. A remote
+  // TESTING Preview aliases that service away and starts no local servers.
+  testIgnore: remoteURL ? '**/api-key-provider.spec.ts' : undefined,
   fullyParallel: true,
   workers: process.env.CI ? 2 : undefined,
   retries: 0,

@@ -66,6 +66,12 @@ Sketch Air uses React 19, TypeScript, Vite 6, Lucide icons, Google GenAI, and Me
 
 ## Development and validation
 
+For scenario generation, approved test automation, broken-test investigation, or
+intermittent-failure triage, use the project-local
+[Sketch Air QA skill](./.agents/skills/sketch-air-qa/SKILL.md). Read it directly
+when runtime discovery is unavailable. Track BYOK scenario approval, test mappings,
+and remaining gaps in [the scenario register](./docs/qa/byok-scenarios.md).
+
 Use the existing npm lockfile. Install dependencies only if needed and permitted by the environment.
 
 - `npm run dev`: Vite development server on port 3000.
