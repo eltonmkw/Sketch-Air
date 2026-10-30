@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+export const providerBaseURL = 'http://127.0.0.1:4174';
+
 const remoteURL = process.env.PLAYWRIGHT_BASE_URL;
 if (remoteURL && (new URL(remoteURL).protocol !== 'https:'
   || new URL(remoteURL).origin !== remoteURL)) {
@@ -31,7 +33,7 @@ export default defineConfig({
       // Deliberately set ENV=TESTING and mode=test during a real build. No mock may ship.
       command: 'npm run build -- --mode test && npm run preview -- --host 127.0.0.1 --port 4174 --strictPort',
       env: { ENV: 'TESTING', NODE_ENV: 'production', VERCEL_ENV: 'production', VERCEL_TARGET_ENV: 'production' },
-      url: 'http://127.0.0.1:4174',
+      url: providerBaseURL,
     },
     {
       command: 'npm run build -- --outDir dist-preview && npm run preview -- --outDir dist-preview --host 127.0.0.1 --port 4175 --strictPort',
