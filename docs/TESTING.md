@@ -16,12 +16,42 @@ On Linux, Playwright may also need system dependencies; use `npx playwright inst
 
 - `npm test` checks API-key storage and test-mode isolation using Node's test runner.
 - `npm run test:browser` checks the key dialog in a local testing server, a production build, and a testing Preview build. It covers memory-only refresh, opt-in persistence after Done, removal, blocked-storage feedback, and production rejection of the dummy key.
+- `tests/browser/api-key-provider.spec.ts` adds local production-path coverage with
+  the real Google SDK and intercepted responses: successful lookup, empty input,
+  provider errors, retry, timeout, stale responses, and key exposure boundaries.
+  It is excluded when `PLAYWRIGHT_BASE_URL` selects a remote TESTING Preview,
+  because that target replaces the real service and starts no local production server.
 - Browser tests mock Google responses and stub or block external CDN resources. They do not verify live Gemini access, billing, camera, or microphone behavior.
 - TypeScript and build checks validate types and bundling. There is no configured lint script.
 
 The [CI workflow](../.github/workflows/ci.yml) runs these checks for pushes to `main` and non-draft pull requests targeting `main`.
 
 CI uses Node 24 inside the Playwright `v1.56.1-noble` image, which already includes browser binaries and system dependencies. Keep that image version matched to `@playwright/test` when upgrading. See the [deployment guide](./DEPLOYMENT.md#verification) for the Docker equivalent.
+
+## Repeatable AI-assisted QA
+
+Use the [Sketch Air QA skill](../.agents/skills/sketch-air-qa/SKILL.md) for four modes:
+generate scenarios, write approved tests, investigate a broken test, or triage an
+intermittent failure. The [BYOK register](./qa/byok-scenarios.md) records approved
+scenario IDs, test mappings, deferred coverage, and discovered defects.
+
+Example requests:
+
+- “Use sketch-air-qa to generate scenarios for this change; stop for approval.”
+- “Use sketch-air-qa to automate approved scenario BYOK-03.”
+- “Use sketch-air-qa to investigate BYOK-04 using this failure and trace.”
+- “Use sketch-air-qa to triage intermittent BYOK-07 failures from repeated runs.”
+
+Run the production-path slice locally with:
+
+```sh
+npm run test:browser -- api-key-provider.spec.ts
+```
+
+All provider traffic is intercepted; no real key or paid request is permitted.
+Do not treat mocked success as evidence of live Google access. A product defect
+must remain a failing assertion until an authorized application fix resolves it;
+see the register's QA-01 focus finding. CI will report such failures normally.
 
 ## API-key verification without Google access
 
